@@ -66,40 +66,17 @@ func MergeCommonConfig(cfg *CommonConfig) *CommonConfig {
 }
 
 // LoadHosts 加载主机列表（公共方法）
+// 优先级：命令行参数 > ansible.cfg inventory > 错误
 func LoadHosts(cfg *CommonConfig, requireHosts bool) ([]executor.Host, error) {
+	// 如果未指定主机来源，尝试从 ansible.cfg 加载
 	if cfg.HostsDir == "" && cfg.HostsFile == "" && cfg.HostsString == "" {
-		ansibleCfg, err := config.LoadAnsibleConfig()
-		if err == nil && ansibleCfg.Inventory != "" {
-			hosts, err := config.LoadHostsFromInventory(ansibleCfg.Inventory, cfg.Group)
-			if err != nil {
-				return nil, fmt.Errorf("从 ansible.cfg inventory 加载主机列表失败: %w", err)
-			}
-			return hosts, nil
-		}
-		if requireHosts {
-			return nil, fmt.Errorf("必须指定主机列表（-f、-d、-H 或 ansible.cfg 中的 inventory）")
-		}
-		return nil, nil
+		return loadHostsFromAnsibleConfig(cfg.Group, requireHosts)
 	}
 
-	var hosts []executor.Host
-	var err error
-
-	if cfg.HostsDir != "" {
-		hosts, err = config.LoadHostsFromDirectory(cfg.HostsDir, cfg.Group)
-		if err != nil {
-			return nil, fmt.Errorf("从目录加载主机列表失败: %w", err)
-		}
-	} else if cfg.HostsFile != "" {
-		hosts, err = config.LoadHostsFromFileWithGroup(cfg.HostsFile, cfg.Group)
-		if err != nil {
-			return nil, fmt.Errorf("加载主机列表失败: %w", err)
-		}
-	} else if cfg.HostsString != "" {
-		hosts, err = config.LoadHostsFromString(cfg.HostsString)
-		if err != nil {
-			return nil, fmt.Errorf("解析主机列表失败: %w", err)
-		}
+	// 从命令行参数加载主机列表
+	hosts, err := loadHostsFromConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(hosts) == 0 {
@@ -107,4 +84,52 @@ func LoadHosts(cfg *CommonConfig, requireHosts bool) ([]executor.Host, error) {
 	}
 
 	return hosts, nil
+}
+
+// loadHostsFromAnsibleConfig 从 ansible.cfg 配置文件加载主机列表
+func loadHostsFromAnsibleConfig(group string, requireHosts bool) ([]executor.Host, error) {
+	ansibleCfg, err := config.LoadAnsibleConfig()
+	if err == nil && ansibleCfg.Inventory != "" {
+		hosts, err := config.LoadHostsFromInventory(ansibleCfg.Inventory, group)
+		if err != nil {
+			return nil, fmt.Errorf("从 ansible.cfg inventory 加载主机列表失败: %w", err)
+		}
+		return hosts, nil
+	}
+
+	if requireHosts {
+		return nil, fmt.Errorf("必须指定主机列表（-f、-d、-H 或 ansible.cfg 中的 inventory）")
+	}
+
+	return nil, nil
+}
+
+// loadHostsFromConfig 从配置中加载主机列表
+// 支持从目录、文件或字符串加载
+func loadHostsFromConfig(cfg *CommonConfig) ([]executor.Host, error) {
+	if cfg.HostsDir != "" {
+		hosts, err := config.LoadHostsFromDirectory(cfg.HostsDir, cfg.Group)
+		if err != nil {
+			return nil, fmt.Errorf("从目录加载主机列表失败: %w", err)
+		}
+		return hosts, nil
+	}
+
+	if cfg.HostsFile != "" {
+		hosts, err := config.LoadHostsFromFileWithGroup(cfg.HostsFile, cfg.Group)
+		if err != nil {
+			return nil, fmt.Errorf("加载主机列表失败: %w", err)
+		}
+		return hosts, nil
+	}
+
+	if cfg.HostsString != "" {
+		hosts, err := config.LoadHostsFromString(cfg.HostsString)
+		if err != nil {
+			return nil, fmt.Errorf("解析主机列表失败: %w", err)
+		}
+		return hosts, nil
+	}
+
+	return nil, nil
 }

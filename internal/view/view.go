@@ -17,6 +17,7 @@ import (
 )
 
 // setupTableStyle 设置表格样式
+// 配置表格的显示样式，包括分隔符、颜色等
 func setupTableStyle(t table.Writer) {
 	t.SetStyle(table.StyleDefault)
 	t.Style().Options.SeparateRows = false
@@ -28,113 +29,166 @@ func setupTableStyle(t table.Writer) {
 
 // PrintRunResults 打印 run 命令的执行结果
 func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOutput bool) {
-	successCount := 0
-	failCount := 0
-	var successHosts []string
-	var failHosts []string
+	stats := collectRunStatistics(results)
+	
+	printRunResultsTable(results, stats)
+	
+	if showOutput {
+		printRunDetailedOutput(results)
+	}
+	
+	printRunSummary(results, stats, totalDuration)
+}
 
-	// 创建表格
+// runStatistics 执行结果统计信息
+type runStatistics struct {
+	successCount int
+	failCount    int
+	successHosts []string
+	failHosts    []string
+}
+
+// collectRunStatistics 收集执行结果统计信息
+func collectRunStatistics(results []*ssh.Result) *runStatistics {
+	stats := &runStatistics{
+		successHosts: make([]string, 0),
+		failHosts:    make([]string, 0),
+	}
+
+	for _, result := range results {
+		if result.Error == nil && result.ExitCode == 0 {
+			stats.successCount++
+			stats.successHosts = append(stats.successHosts, result.Host)
+		} else {
+			stats.failCount++
+			stats.failHosts = append(stats.failHosts, result.Host)
+		}
+	}
+
+	return stats
+}
+
+// printRunResultsTable 打印执行结果表格
+func printRunResultsTable(results []*ssh.Result, stats *runStatistics) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	setupTableStyle(t)
 	t.AppendHeader(table.Row{"主机", "状态", "退出码", "耗时", "错误信息"})
 
 	for _, result := range results {
-		var status string
-		var exitCode string
-		var duration string
-		var errorMsg string
-
-		if result.Error == nil && result.ExitCode == 0 {
-			successCount++
-			successHosts = append(successHosts, result.Host)
-			status = text.Colors{text.FgGreen}.Sprint("✓ 成功")
-		} else {
-			failCount++
-			failHosts = append(failHosts, result.Host)
-			status = text.Colors{text.FgRed}.Sprint("✗ 失败")
-			if result.ExitCode != 0 {
-				exitCode = fmt.Sprintf("%d", result.ExitCode)
-			}
-			if result.Error != nil {
-				// 截断过长的错误信息
-				errorMsg = result.Error.Error()
-				if len(errorMsg) > 50 {
-					errorMsg = errorMsg[:47] + "..."
-				}
-			}
-		}
-
-		// 格式化耗时显示
-		if result.Duration > 0 {
-			duration = result.Duration.Round(time.Millisecond).String()
-		}
-
-		t.AppendRow(table.Row{result.Host, status, exitCode, duration, errorMsg})
+		row := buildResultTableRow(result)
+		t.AppendRow(row)
 	}
 
 	fmt.Println()
 	t.Render()
+}
 
-	if showOutput {
-		fmt.Println("\n" + text.Colors{text.FgHiCyan}.Sprint(strings.Repeat("=", 80)))
-		fmt.Println(text.Colors{text.FgHiCyan, text.Bold}.Sprint("详细输出"))
-		fmt.Println(text.Colors{text.FgHiCyan}.Sprint(strings.Repeat("=", 80)))
-		for _, result := range results {
-			isSuccess := result.Error == nil && result.ExitCode == 0
+// buildResultTableRow 构建结果表格行
+func buildResultTableRow(result *ssh.Result) table.Row {
+	var status string
+	var exitCode string
+	var duration string
+	var errorMsg string
 
-			var hostColor text.Colors
-			if isSuccess {
-				hostColor = text.Colors{text.FgGreen, text.Bold}
-			} else {
-				hostColor = text.Colors{text.FgRed, text.Bold}
-			}
-			fmt.Printf("\n%s\n", hostColor.Sprint("["+result.Host+"]"))
-
-			if result.Stdout != "" {
-				fmt.Printf("%s\n%s\n",
-					text.Colors{text.FgHiWhite}.Sprint("标准输出:"),
-					result.Stdout)
-			}
-
-			if result.Stderr != "" {
-				fmt.Printf("%s\n%s\n",
-					text.Colors{text.FgRed}.Sprint("标准错误:"),
-					text.Colors{text.FgRed}.Sprint(result.Stderr))
-			}
-
-			if result.Error != nil {
-				fmt.Printf("%s %s\n",
-					text.Colors{text.FgRed}.Sprint("错误:"),
-					text.Colors{text.FgRed}.Sprint(result.Error.Error()))
-			}
-
-			fmt.Println(text.Colors{text.FgHiBlack}.Sprint(strings.Repeat("-", 80)))
+	if result.Error == nil && result.ExitCode == 0 {
+		status = text.Colors{text.FgGreen}.Sprint("✓ 成功")
+	} else {
+		status = text.Colors{text.FgRed}.Sprint("✗ 失败")
+		if result.ExitCode != 0 {
+			exitCode = fmt.Sprintf("%d", result.ExitCode)
+		}
+		if result.Error != nil {
+			errorMsg = truncateError(result.Error.Error(), 50)
 		}
 	}
 
-	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n",
-		len(results),
-		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", successCount)),
-		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", failCount)),
-		totalDuration.Round(time.Millisecond).String())
-
-	if len(successHosts) > 0 {
-		fmt.Printf("%s: %s\n",
-			text.Colors{text.FgGreen, text.Bold}.Sprint("成功主机"),
-			text.Colors{text.FgGreen}.Sprint(strings.Join(successHosts, ", ")))
+	if result.Duration > 0 {
+		duration = result.Duration.Round(time.Millisecond).String()
 	}
 
-	if len(failHosts) > 0 {
+	return table.Row{result.Host, status, exitCode, duration, errorMsg}
+}
+
+// truncateError 截断过长的错误信息
+func truncateError(errorMsg string, maxLen int) string {
+	if len(errorMsg) > maxLen {
+		return errorMsg[:maxLen-3] + "..."
+	}
+	return errorMsg
+}
+
+// printRunDetailedOutput 打印详细输出信息
+func printRunDetailedOutput(results []*ssh.Result) {
+	fmt.Println("\n" + text.Colors{text.FgHiCyan}.Sprint(strings.Repeat("=", 80)))
+	fmt.Println(text.Colors{text.FgHiCyan, text.Bold}.Sprint("详细输出"))
+	fmt.Println(text.Colors{text.FgHiCyan}.Sprint(strings.Repeat("=", 80)))
+
+	for _, result := range results {
+		printHostDetailedOutput(result)
+	}
+}
+
+// printHostDetailedOutput 打印单个主机的详细输出
+func printHostDetailedOutput(result *ssh.Result) {
+	isSuccess := result.Error == nil && result.ExitCode == 0
+	hostColor := getHostColor(isSuccess)
+	fmt.Printf("\n%s\n", hostColor.Sprint("["+result.Host+"]"))
+
+	if result.Stdout != "" {
+		fmt.Printf("%s\n%s\n",
+			text.Colors{text.FgHiWhite}.Sprint("标准输出:"),
+			result.Stdout)
+	}
+
+	if result.Stderr != "" {
+		fmt.Printf("%s\n%s\n",
+			text.Colors{text.FgRed}.Sprint("标准错误:"),
+			text.Colors{text.FgRed}.Sprint(result.Stderr))
+	}
+
+	if result.Error != nil {
+		fmt.Printf("%s %s\n",
+			text.Colors{text.FgRed}.Sprint("错误:"),
+			text.Colors{text.FgRed}.Sprint(result.Error.Error()))
+	}
+
+	fmt.Println(text.Colors{text.FgHiBlack}.Sprint(strings.Repeat("-", 80)))
+}
+
+// getHostColor 根据执行结果获取主机颜色
+func getHostColor(isSuccess bool) text.Colors {
+	if isSuccess {
+		return text.Colors{text.FgGreen, text.Bold}
+	}
+	return text.Colors{text.FgRed, text.Bold}
+}
+
+// printRunSummary 打印执行结果摘要
+func printRunSummary(results []*ssh.Result, stats *runStatistics, totalDuration time.Duration) {
+	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n",
+		len(results),
+		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", stats.successCount)),
+		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", stats.failCount)),
+		totalDuration.Round(time.Millisecond).String())
+
+	if len(stats.successHosts) > 0 {
+		fmt.Printf("%s: %s\n",
+			text.Colors{text.FgGreen, text.Bold}.Sprint("成功主机"),
+			text.Colors{text.FgGreen}.Sprint(strings.Join(stats.successHosts, ", ")))
+	}
+
+	if len(stats.failHosts) > 0 {
 		fmt.Printf("%s: %s\n",
 			text.Colors{text.FgRed, text.Bold}.Sprint("失败主机"),
-			text.Colors{text.FgRed}.Sprint(strings.Join(failHosts, ", ")))
+			text.Colors{text.FgRed}.Sprint(strings.Join(stats.failHosts, ", ")))
 	}
 
 	fmt.Println()
 }
 
 // PrintPingResults 打印 ping 命令的测试结果
+// 显示所有主机的连接测试结果，包括成功/失败状态、延迟和错误信息
 func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 	successCount := 0
 	failCount := 0

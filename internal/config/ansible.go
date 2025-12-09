@@ -71,6 +71,15 @@ func parseAnsibleConfig(cfgPath string) (*AnsibleConfig, error) {
 		Timeout: 30, // 默认值
 	}
 
+	if err := parseConfigFile(file, config); err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+// parseConfigFile 解析配置文件内容
+func parseConfigFile(file *os.File, config *AnsibleConfig) error {
 	scanner := bufio.NewScanner(file)
 	inDefaults := false
 
@@ -83,9 +92,8 @@ func parseAnsibleConfig(cfgPath string) (*AnsibleConfig, error) {
 		}
 
 		// 检查是否进入 [defaults] 部分
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section := strings.TrimSpace(line[1 : len(line)-1])
-			inDefaults = (section == "defaults")
+		if isSectionHeader(line) {
+			inDefaults = isDefaultsSection(line)
 			continue
 		}
 
@@ -95,37 +103,62 @@ func parseAnsibleConfig(cfgPath string) (*AnsibleConfig, error) {
 		}
 
 		// 解析配置项
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
+		key, value := parseConfigLine(line)
+		if key == "" {
 			continue
 		}
 
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		switch key {
-		case "inventory":
-			config.Inventory = value
-		case "private_key_file":
-			config.PrivateKeyFile = value
-		case "remote_user":
-			config.RemoteUser = value
-		case "forks":
-			if forks, err := strconv.Atoi(value); err == nil {
-				config.Forks = forks
-			}
-		case "timeout":
-			if timeout, err := strconv.Atoi(value); err == nil {
-				config.Timeout = timeout
-			}
-		}
+		applyConfigValue(config, key, value)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("读取配置文件失败: %w", err)
+		return fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
-	return config, nil
+	return nil
+}
+
+// isSectionHeader 检查是否是节标题
+func isSectionHeader(line string) bool {
+	return strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]")
+}
+
+// isDefaultsSection 检查是否是 [defaults] 节
+func isDefaultsSection(line string) bool {
+	section := strings.TrimSpace(line[1 : len(line)-1])
+	return section == "defaults"
+}
+
+// parseConfigLine 解析配置行，返回 key 和 value
+func parseConfigLine(line string) (string, string) {
+	parts := strings.SplitN(line, "=", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+
+	key := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+	return key, value
+}
+
+// applyConfigValue 应用配置值到配置对象
+func applyConfigValue(config *AnsibleConfig, key, value string) {
+	switch key {
+	case "inventory":
+		config.Inventory = value
+	case "private_key_file":
+		config.PrivateKeyFile = value
+	case "remote_user":
+		config.RemoteUser = value
+	case "forks":
+		if forks, err := strconv.Atoi(value); err == nil {
+			config.Forks = forks
+		}
+	case "timeout":
+		if timeout, err := strconv.Atoi(value); err == nil {
+			config.Timeout = timeout
+		}
+	}
 }
 
 // LoadHostsFromInventory 从 inventory 配置加载主机列表
@@ -146,50 +179,15 @@ func LoadHostsFromInventory(inventory string, group string) ([]executor.Host, er
 			continue
 		}
 
-		// 检查是否是目录
-		info, err := os.Stat(filePath)
+		hosts, err := loadHostsFromInventoryPath(filePath, group)
 		if err != nil {
-			// 文件不存在，跳过
+			// 如果某个路径加载失败，记录错误但继续处理其他文件
+			fmt.Fprintf(os.Stderr, "警告: 从路径 %s 加载主机失败: %v\n", filePath, err)
 			continue
 		}
 
-		if info.IsDir() {
-			// 如果是目录，使用目录加载方式
-			hosts, err := LoadHostsFromDirectory(filePath, group)
-			if err != nil {
-				// 如果某个目录加载失败，记录错误但继续处理其他文件
-				fmt.Fprintf(os.Stderr, "警告: 从目录 %s 加载主机失败: %v\n", filePath, err)
-				continue
-			}
-
-			// 聚合主机并去重
-			for _, host := range hosts {
-				key := fmt.Sprintf("%s:%s", host.Address, host.Port)
-				if !hostMap[key] {
-					hostMap[key] = true
-					allHosts = append(allHosts, host)
-				}
-			}
-		} else {
-			// 如果是文件，加载文件中的所有主机
-			hostsWithGroups, err := loadHostsFromFileWithGroups(filePath)
-			if err != nil {
-				// 如果某个文件加载失败，记录错误但继续处理其他文件
-				fmt.Fprintf(os.Stderr, "警告: 从文件 %s 加载主机失败: %v\n", filePath, err)
-				continue
-			}
-
-			// 根据分组筛选
-			for _, hwg := range hostsWithGroups {
-				if group == "" || group == "all" || hwg.group == group {
-					key := fmt.Sprintf("%s:%s", hwg.host.Address, hwg.host.Port)
-					if !hostMap[key] {
-						hostMap[key] = true
-						allHosts = append(allHosts, hwg.host)
-					}
-				}
-			}
-		}
+		// 聚合主机并去重
+		allHosts = mergeHostsWithDedup(allHosts, hosts, hostMap)
 	}
 
 	if len(allHosts) == 0 {
@@ -197,4 +195,49 @@ func LoadHostsFromInventory(inventory string, group string) ([]executor.Host, er
 	}
 
 	return allHosts, nil
+}
+
+// loadHostsFromInventoryPath 从单个 inventory 路径加载主机列表
+// 支持文件和目录两种类型
+func loadHostsFromInventoryPath(filePath, group string) ([]executor.Host, error) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("路径不存在: %w", err)
+	}
+
+	if info.IsDir() {
+		return LoadHostsFromDirectory(filePath, group)
+	}
+
+	return loadHostsFromInventoryFile(filePath, group)
+}
+
+// loadHostsFromInventoryFile 从 inventory 文件加载主机列表
+func loadHostsFromInventoryFile(filePath, group string) ([]executor.Host, error) {
+	hostsWithGroups, err := loadHostsFromFileWithGroups(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 根据分组筛选
+	var hosts []executor.Host
+	for _, hwg := range hostsWithGroups {
+		if group == "" || group == "all" || hwg.group == group {
+			hosts = append(hosts, hwg.host)
+		}
+	}
+
+	return hosts, nil
+}
+
+// mergeHostsWithDedup 合并主机列表并去重
+func mergeHostsWithDedup(allHosts, newHosts []executor.Host, hostMap map[string]bool) []executor.Host {
+	for _, host := range newHosts {
+		key := fmt.Sprintf("%s:%s", host.Address, host.Port)
+		if !hostMap[key] {
+			hostMap[key] = true
+			allHosts = append(allHosts, host)
+		}
+	}
+	return allHosts
 }

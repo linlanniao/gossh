@@ -64,58 +64,33 @@ func (c *Client) Execute(command string) (*Result, error) {
 // ExecuteWithBecome 执行命令并返回结果，支持 become 模式（类似 sudo）
 func (c *Client) ExecuteWithBecome(command string, become bool, becomeUser string) (*Result, error) {
 	startTime := time.Now()
-	address := fmt.Sprintf("%s:%s", c.host, c.port)
-	conn, err := ssh.Dial("tcp", address, c.config)
+
+	conn, err := c.createSSHConnection()
 	if err != nil {
-		return nil, fmt.Errorf("连接失败: %w", err)
+		return nil, err
 	}
 	defer conn.Close()
 
-	session, err := conn.NewSession()
+	session, err := c.createSession(conn)
 	if err != nil {
-		return nil, fmt.Errorf("创建会话失败: %w", err)
+		return nil, err
 	}
 	defer session.Close()
 
-	// 捕获标准输出和标准错误
-	stdout, err := session.StdoutPipe()
+	stdout, stderr, err := c.setupPipes(session)
 	if err != nil {
-		return nil, fmt.Errorf("获取标准输出失败: %w", err)
+		return nil, err
 	}
 
-	stderr, err := session.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("获取标准错误失败: %w", err)
-	}
-
-	// 如果启用 become 模式，使用 sudo 执行命令
-	finalCommand := command
-	if become {
-		if becomeUser != "" && becomeUser != "root" {
-			finalCommand = fmt.Sprintf("sudo -u %s %s", becomeUser, command)
-		} else {
-			finalCommand = fmt.Sprintf("sudo %s", command)
-		}
-	}
-
-	// 执行命令
+	finalCommand := c.buildCommand(command, become, becomeUser)
 	if err := session.Start(finalCommand); err != nil {
 		return nil, fmt.Errorf("启动命令失败: %w", err)
 	}
 
-	// 读取输出
 	output, _ := io.ReadAll(stdout)
 	errOutput, _ := io.ReadAll(stderr)
 
-	// 等待命令完成
-	err = session.Wait()
-	exitCode := 0
-	if err != nil {
-		if exitError, ok := err.(*ssh.ExitError); ok {
-			exitCode = exitError.ExitStatus()
-		}
-	}
-
+	exitCode := c.waitForCommand(session)
 	duration := time.Since(startTime)
 
 	return &Result{
@@ -127,6 +102,64 @@ func (c *Client) ExecuteWithBecome(command string, become bool, becomeUser strin
 		Duration: duration,
 		Error:    err,
 	}, nil
+}
+
+// createSSHConnection 创建 SSH 连接
+func (c *Client) createSSHConnection() (*ssh.Client, error) {
+	address := fmt.Sprintf("%s:%s", c.host, c.port)
+	conn, err := ssh.Dial("tcp", address, c.config)
+	if err != nil {
+		return nil, fmt.Errorf("连接失败: %w", err)
+	}
+	return conn, nil
+}
+
+// createSession 创建 SSH 会话
+func (c *Client) createSession(conn *ssh.Client) (*ssh.Session, error) {
+	session, err := conn.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("创建会话失败: %w", err)
+	}
+	return session, nil
+}
+
+// setupPipes 设置标准输出和标准错误管道
+func (c *Client) setupPipes(session *ssh.Session) (io.Reader, io.Reader, error) {
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取标准输出失败: %w", err)
+	}
+
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取标准错误失败: %w", err)
+	}
+
+	return stdout, stderr, nil
+}
+
+// buildCommand 构建最终执行的命令（支持 become 模式）
+func (c *Client) buildCommand(command string, become bool, becomeUser string) string {
+	if !become {
+		return command
+	}
+
+	if becomeUser != "" && becomeUser != "root" {
+		return fmt.Sprintf("sudo -u %s %s", becomeUser, command)
+	}
+
+	return fmt.Sprintf("sudo %s", command)
+}
+
+// waitForCommand 等待命令完成并返回退出码
+func (c *Client) waitForCommand(session *ssh.Session) int {
+	err := session.Wait()
+	if err != nil {
+		if exitError, ok := err.(*ssh.ExitError); ok {
+			return exitError.ExitStatus()
+		}
+	}
+	return 0
 }
 
 // ExecuteScript 执行脚本文件（先上传到临时目录再执行）
@@ -207,97 +240,93 @@ func (c *Client) cleanupTempFile(conn *ssh.Client, filePath string) error {
 // UploadFile 上传文件到远程主机
 func (c *Client) UploadFile(localPath string, remotePath string, mode string) (*Result, error) {
 	startTime := time.Now()
+	command := fmt.Sprintf("upload %s -> %s", localPath, remotePath)
 
-	// 打开本地文件
-	localFile, err := os.Open(localPath)
+	localFile, err := c.openLocalFile(localPath)
 	if err != nil {
-		return &Result{
-			Host:     c.host,
-			Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
-			Stdout:   "",
-			Stderr:   fmt.Sprintf("打开本地文件失败: %v", err),
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-			Error:    err,
-		}, fmt.Errorf("打开本地文件失败: %w", err)
+		return c.createErrorResult(command, startTime, err, "打开本地文件失败"), err
 	}
 	defer localFile.Close()
 
-	// 确保文件指针在开头
-	_, err = localFile.Seek(0, 0)
+	conn, err := c.createSSHConnection()
 	if err != nil {
-		return &Result{
-			Host:     c.host,
-			Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
-			Stdout:   "",
-			Stderr:   fmt.Sprintf("重置文件指针失败: %v", err),
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-			Error:    err,
-		}, fmt.Errorf("重置文件指针失败: %w", err)
-	}
-
-	// 建立 SSH 连接
-	address := fmt.Sprintf("%s:%s", c.host, c.port)
-	conn, err := ssh.Dial("tcp", address, c.config)
-	if err != nil {
-		return &Result{
-			Host:     c.host,
-			Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
-			Stdout:   "",
-			Stderr:   fmt.Sprintf("连接失败: %v", err),
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-			Error:    err,
-		}, fmt.Errorf("连接失败: %w", err)
+		return c.createErrorResult(command, startTime, err, "连接失败"), err
 	}
 	defer conn.Close()
 
-	// 使用 go-scp 库创建 SCP 客户端
-	scpClient, err := scp.NewClientBySSH(conn)
+	scpClient, err := c.createSCPClient(conn)
 	if err != nil {
-		return &Result{
-			Host:     c.host,
-			Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
-			Stdout:   "",
-			Stderr:   fmt.Sprintf("创建 SCP 客户端失败: %v", err),
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-			Error:    err,
-		}, fmt.Errorf("创建 SCP 客户端失败: %w", err)
+		return c.createErrorResult(command, startTime, err, "创建 SCP 客户端失败"), err
 	}
 	defer scpClient.Close()
 
-	// 设置默认权限
-	if mode == "" {
-		mode = "0644"
-	}
-
-	// 使用 go-scp 上传文件，设置超时避免无限等待
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	err = scpClient.CopyFromFile(ctx, *localFile, remotePath, mode)
-	if err != nil {
-		return &Result{
-			Host:     c.host,
-			Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
-			Stdout:   "",
-			Stderr:   fmt.Sprintf("上传文件失败: %v", err),
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-			Error:    err,
-		}, fmt.Errorf("上传文件失败: %w", err)
+	mode = c.normalizeFileMode(mode)
+	if err := c.copyFile(scpClient, localFile, remotePath, mode); err != nil {
+		return c.createErrorResult(command, startTime, err, "上传文件失败"), err
 	}
 
 	return &Result{
 		Host:     c.host,
-		Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
+		Command:  command,
 		Stdout:   fmt.Sprintf("文件已成功上传到 %s", remotePath),
 		Stderr:   "",
 		ExitCode: 0,
 		Duration: time.Since(startTime),
 		Error:    nil,
 	}, nil
+}
+
+// openLocalFile 打开本地文件并重置文件指针
+func (c *Client) openLocalFile(localPath string) (*os.File, error) {
+	localFile, err := os.Open(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("打开本地文件失败: %w", err)
+	}
+
+	// 确保文件指针在开头
+	if _, err := localFile.Seek(0, 0); err != nil {
+		localFile.Close()
+		return nil, fmt.Errorf("重置文件指针失败: %w", err)
+	}
+
+	return localFile, nil
+}
+
+// createSCPClient 创建 SCP 客户端
+func (c *Client) createSCPClient(conn *ssh.Client) (scp.Client, error) {
+	scpClient, err := scp.NewClientBySSH(conn)
+	if err != nil {
+		return scpClient, fmt.Errorf("创建 SCP 客户端失败: %w", err)
+	}
+	return scpClient, nil
+}
+
+// normalizeFileMode 规范化文件权限模式
+func (c *Client) normalizeFileMode(mode string) string {
+	if mode == "" {
+		return "0644"
+	}
+	return mode
+}
+
+// copyFile 使用 SCP 客户端复制文件
+func (c *Client) copyFile(scpClient scp.Client, localFile *os.File, remotePath, mode string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	return scpClient.CopyFromFile(ctx, *localFile, remotePath, mode)
+}
+
+// createErrorResult 创建错误结果对象
+func (c *Client) createErrorResult(command string, startTime time.Time, err error, message string) *Result {
+	return &Result{
+		Host:     c.host,
+		Command:  command,
+		Stdout:   "",
+		Stderr:   fmt.Sprintf("%s: %v", message, err),
+		ExitCode: -1,
+		Duration: time.Since(startTime),
+		Error:    err,
+	}
 }
 
 // Ping 测试 SSH 连接是否成功，返回连接延迟和错误信息
