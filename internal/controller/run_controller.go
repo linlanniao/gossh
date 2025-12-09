@@ -6,6 +6,7 @@ import (
 
 	"gossh/internal/config"
 	"gossh/internal/executor"
+	"gossh/internal/logger"
 	"gossh/internal/ssh"
 	"gossh/internal/view"
 )
@@ -33,6 +34,7 @@ type RunCommandRequest struct {
 	BecomeUser  string
 	Concurrency int
 	ShowOutput  bool
+	LogDir      string
 }
 
 // RunCommandResponse run 命令的响应
@@ -45,6 +47,13 @@ type RunCommandResponse struct {
 func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, error) {
 	// 合并配置（优先级：命令行参数 > ansible.cfg > 默认值）
 	mergedReq := c.mergeConfig(req)
+
+	// 创建日志记录器
+	log, err := logger.NewLogger(mergedReq.LogDir, "run")
+	if err != nil {
+		return nil, fmt.Errorf("创建日志记录器失败: %w", err)
+	}
+	defer log.Close()
 
 	// 打印当前配置参数
 	view.PrintRunConfig(
@@ -63,16 +72,41 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 		mergedReq.ShowOutput,
 	)
 
+	// 记录命令开始
+	log.LogCommandStart("run", map[string]interface{}{
+		"hosts_file":   mergedReq.HostsFile,
+		"hosts_dir":    mergedReq.HostsDir,
+		"hosts_string": mergedReq.HostsString,
+		"group":        mergedReq.Group,
+		"user":         mergedReq.User,
+		"key_path":     mergedReq.KeyPath,
+		"port":         mergedReq.Port,
+		"command":      mergedReq.Command,
+		"become":       mergedReq.Become,
+		"become_user":  mergedReq.BecomeUser,
+		"concurrency":  mergedReq.Concurrency,
+		"show_output":  mergedReq.ShowOutput,
+	})
+
 	// 验证参数
 	if err := c.validateRequest(mergedReq); err != nil {
+		log.LogError("参数验证失败", err)
 		return nil, err
 	}
 
 	// 加载主机列表
 	hosts, err := c.loadHosts(mergedReq)
 	if err != nil {
+		log.LogError("加载主机列表失败", err)
 		return nil, err
 	}
+
+	// 记录主机列表
+	hostAddresses := make([]string, len(hosts))
+	for i, h := range hosts {
+		hostAddresses[i] = h.Address
+	}
+	log.LogHosts(hostAddresses)
 
 	// 设置默认端口
 	port := mergedReq.Port
@@ -116,9 +150,33 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 	// 停止进度跟踪器
 	progressTracker.Stop()
 
+	// 记录每个主机的执行结果
+	successCount := 0
+	for _, result := range results {
+		success := result.ExitCode == 0 && result.Error == nil
+		if success {
+			successCount++
+		}
+		log.LogHostResult(
+			result.Host,
+			result.Command,
+			result.ExitCode,
+			result.Duration,
+			success,
+			result.Stdout,
+			result.Stderr,
+			result.Error,
+		)
+	}
+
+	// 记录命令结束
+	commandSuccess := err == nil && successCount == len(results)
 	if err != nil {
+		log.LogCommandEnd("run", totalDuration, false, err)
 		return nil, fmt.Errorf("执行失败: %w", err)
 	}
+
+	log.LogCommandEnd("run", totalDuration, commandSuccess, nil)
 
 	return &RunCommandResponse{
 		Results:       results,
@@ -142,6 +200,7 @@ func (c *RunController) mergeConfig(req *RunCommandRequest) *RunCommandRequest {
 		BecomeUser:  req.BecomeUser,
 		Concurrency: req.Concurrency,
 		ShowOutput:  req.ShowOutput,
+		LogDir:      req.LogDir,
 	}
 
 	// 加载 ansible.cfg

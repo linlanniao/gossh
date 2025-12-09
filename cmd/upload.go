@@ -21,6 +21,7 @@ var (
 	uploadMode        string
 	uploadConcurrency int
 	uploadShowOutput  bool
+	uploadLogDir      string
 )
 
 // uploadCmd represents the upload command
@@ -67,6 +68,7 @@ var uploadCmd = &cobra.Command{
 			Mode:        uploadMode,
 			Concurrency: uploadConcurrency,
 			ShowOutput:  uploadShowOutput,
+			LogDir:      uploadLogDir,
 		}
 
 		// 执行命令
@@ -105,4 +107,5 @@ func init() {
 	uploadCmd.Flags().StringVar(&uploadMode, "mode", "0644", "文件权限（默认: 0644）")
 	uploadCmd.Flags().IntVar(&uploadConcurrency, "concurrency", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
 	uploadCmd.Flags().BoolVar(&uploadShowOutput, "show-output", true, "显示命令输出（默认: true）")
+	uploadCmd.Flags().StringVar(&uploadLogDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：upload-时间戳.log")
 }

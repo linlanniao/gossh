@@ -21,6 +21,7 @@ var (
 	becomeUser  string
 	concurrency int
 	showOutput  bool
+	logDir      string
 )
 
 // runCmd represents the run command
@@ -68,6 +69,7 @@ var runCmd = &cobra.Command{
 			BecomeUser:  becomeUser,
 			Concurrency: concurrency,
 			ShowOutput:  showOutput,
+			LogDir:      logDir,
 		}
 
 		// 执行命令
@@ -105,4 +107,5 @@ func init() {
 	runCmd.Flags().StringVar(&becomeUser, "become-user", "", "使用 sudo 切换到指定用户执行命令（默认: root）")
 	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
 	runCmd.Flags().BoolVar(&showOutput, "show-output", true, "显示命令输出（默认: true）")
+	runCmd.Flags().StringVar(&logDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：run-时间戳.log")
 }

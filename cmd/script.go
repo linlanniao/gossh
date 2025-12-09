@@ -21,6 +21,7 @@ var (
 	scriptBecomeUser  string
 	scriptConcurrency int
 	scriptShowOutput  bool
+	scriptLogDir      string
 )
 
 // scriptCmd represents the script command
@@ -69,6 +70,7 @@ var scriptCmd = &cobra.Command{
 			BecomeUser:  scriptBecomeUser,
 			Concurrency: scriptConcurrency,
 			ShowOutput:  scriptShowOutput,
+			LogDir:      scriptLogDir,
 		}
 
 		// 执行命令
@@ -106,4 +108,5 @@ func init() {
 	scriptCmd.Flags().StringVar(&scriptBecomeUser, "become-user", "", "使用 sudo 切换到指定用户执行脚本（默认: root）")
 	scriptCmd.Flags().IntVar(&scriptConcurrency, "concurrency", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
 	scriptCmd.Flags().BoolVar(&scriptShowOutput, "show-output", true, "显示命令输出（默认: true）")
+	scriptCmd.Flags().StringVar(&scriptLogDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：script-时间戳.log")
 }
