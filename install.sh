@@ -30,7 +30,7 @@ if [ "$OS" != "linux" ] && [ "$OS" != "darwin" ]; then
 fi
 
 # 获取最新版本号
-GITHUB_REPO="yourusername/gossh"  # 请替换为实际的仓库地址
+GITHUB_REPO="linlanniao/gossh"
 LATEST_VERSION=$(curl -s https://api.github.com/repos/$GITHUB_REPO/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
 if [ -z "$LATEST_VERSION" ]; then

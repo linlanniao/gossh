@@ -29,14 +29,12 @@ go run .
 ### 一键安装（推荐）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/gossh/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/linlanniao/gossh/main/install.sh | bash
 ```
-
-**注意：** 请将 `yourusername` 替换为实际的 GitHub 用户名或组织名。
 
 ### 从 GitHub Releases 手动下载
 
-访问 [GitHub Releases](https://github.com/yourusername/gossh/releases) 下载对应平台的预编译二进制文件，解压后手动复制到系统 PATH 目录。
+访问 [GitHub Releases](https://github.com/linlanniao/gossh/releases) 下载对应平台的预编译二进制文件，解压后手动复制到系统 PATH 目录。
 
 ### 使用 GoReleaser 构建
 
