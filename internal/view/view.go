@@ -16,9 +16,8 @@ import (
 	"github.com/jedib0t/go-pretty/v6/text"
 )
 
-// setupTableStyle 设置表格样式 - 使用简洁优雅的样式
+// setupTableStyle 设置表格样式
 func setupTableStyle(t table.Writer) {
-	// 使用预定义的简洁样式，然后自定义颜色
 	t.SetStyle(table.StyleDefault)
 	t.Style().Options.SeparateRows = false
 	t.Style().Options.SeparateColumns = true
@@ -77,16 +76,13 @@ func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOut
 	fmt.Println()
 	t.Render()
 
-	// 如果需要显示详细输出，在表格后单独显示
 	if showOutput {
 		fmt.Println("\n" + text.Colors{text.FgHiCyan}.Sprint(strings.Repeat("=", 80)))
 		fmt.Println(text.Colors{text.FgHiCyan, text.Bold}.Sprint("详细输出"))
 		fmt.Println(text.Colors{text.FgHiCyan}.Sprint(strings.Repeat("=", 80)))
 		for _, result := range results {
-			// 判断是否成功
 			isSuccess := result.Error == nil && result.ExitCode == 0
 
-			// 主机名颜色：成功用绿色，失败用红色
 			var hostColor text.Colors
 			if isSuccess {
 				hostColor = text.Colors{text.FgGreen, text.Bold}
@@ -95,47 +91,40 @@ func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOut
 			}
 			fmt.Printf("\n%s\n", hostColor.Sprint("["+result.Host+"]"))
 
-			// 标准输出（成功时显示）
 			if result.Stdout != "" {
 				fmt.Printf("%s\n%s\n",
 					text.Colors{text.FgHiWhite}.Sprint("标准输出:"),
 					result.Stdout)
 			}
 
-			// 标准错误（失败时显示，用红色）
 			if result.Stderr != "" {
 				fmt.Printf("%s\n%s\n",
 					text.Colors{text.FgRed}.Sprint("标准错误:"),
 					text.Colors{text.FgRed}.Sprint(result.Stderr))
 			}
 
-			// 错误信息（失败时显示，用红色）
 			if result.Error != nil {
 				fmt.Printf("%s %s\n",
 					text.Colors{text.FgRed}.Sprint("错误:"),
 					text.Colors{text.FgRed}.Sprint(result.Error.Error()))
 			}
 
-			// 分隔线用灰色
 			fmt.Println(text.Colors{text.FgHiBlack}.Sprint(strings.Repeat("-", 80)))
 		}
 	}
 
-	// 打印汇总信息
 	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n",
 		len(results),
 		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", successCount)),
 		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", failCount)),
 		totalDuration.Round(time.Millisecond).String())
 
-	// 打印成功的主机列表
 	if len(successHosts) > 0 {
 		fmt.Printf("%s: %s\n",
 			text.Colors{text.FgGreen, text.Bold}.Sprint("成功主机"),
 			text.Colors{text.FgGreen}.Sprint(strings.Join(successHosts, ", ")))
 	}
 
-	// 打印失败的主机列表
 	if len(failHosts) > 0 {
 		fmt.Printf("%s: %s\n",
 			text.Colors{text.FgRed, text.Bold}.Sprint("失败主机"),
@@ -150,7 +139,6 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 	successCount := 0
 	failCount := 0
 
-	// 过滤掉 nil 结果，避免 panic
 	validResults := make([]*ssh.PingResult, 0, len(results))
 	for _, result := range results {
 		if result != nil {
@@ -158,20 +146,17 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 		}
 	}
 
-	// 如果没有有效结果，直接返回
 	if len(validResults) == 0 {
 		fmt.Printf("\n总计: 0 台主机 | 总耗时: %s\n\n",
 			totalDuration.Round(time.Millisecond).String())
 		return
 	}
 
-	// 创建表格
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	setupTableStyle(t)
 	t.AppendHeader(table.Row{"主机", "状态", "延迟", "错误信息"})
 
-	// 批量处理结果，减少内存分配
 	for _, result := range validResults {
 		var status string
 		var duration string
@@ -188,7 +173,6 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 				duration = result.Duration.Round(time.Millisecond).String()
 			}
 			if result.Error != nil {
-				// 截断过长的错误信息，避免表格渲染过慢
 				errorMsg = result.Error.Error()
 				if len(errorMsg) > 100 {
 					errorMsg = errorMsg[:97] + "..."
@@ -202,7 +186,6 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 	fmt.Println()
 	t.Render()
 
-	// 打印汇总信息
 	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n\n",
 		len(validResults),
 		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", successCount)),
@@ -223,16 +206,13 @@ func PrintListResults(hosts []executor.Host, format string) {
 	}
 }
 
-// printListIP 仅打印 IP 地址
 func printListIP(hosts []executor.Host) {
 	for _, host := range hosts {
 		fmt.Println(host.Address)
 	}
 }
 
-// printListFull 打印完整信息
 func printListFull(hosts []executor.Host) {
-	// 创建表格
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	setupTableStyle(t)
@@ -259,7 +239,6 @@ func printListFull(hosts []executor.Host) {
 	fmt.Printf("\n总计: %d 台主机\n\n", len(hosts))
 }
 
-// printListJSON 打印 JSON 格式
 func printListJSON(hosts []executor.Host) {
 	type HostInfo struct {
 		Address string `json:"address"`
@@ -295,7 +274,7 @@ func printListJSON(hosts []executor.Host) {
 	fmt.Println(string(jsonData))
 }
 
-// ProgressTracker 进度跟踪器 - 只显示一个总体进度条
+// ProgressTracker 进度跟踪器
 type ProgressTracker struct {
 	pw          progress.Writer
 	tracker     *progress.Tracker
@@ -311,21 +290,19 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	pw.SetAutoStop(true)
 	pw.SetTrackerLength(50)
 	pw.SetMessageLength(40)
-	pw.SetNumTrackersExpected(1) // 只有一个进度条
+	pw.SetNumTrackersExpected(1)
 	pw.SetStyle(progress.StyleDefault)
 	pw.SetTrackerPosition(progress.PositionRight)
-	pw.SetUpdateFrequency(time.Millisecond * 200) // 降低更新频率，减少渲染开销
+	pw.SetUpdateFrequency(time.Millisecond * 200)
 
-	// 使用更柔和的颜色方案
 	pw.Style().Colors.Message = text.Colors{text.FgHiWhite}
 	pw.Style().Colors.Stats = text.Colors{text.FgHiWhite}
 	pw.Style().Colors.Tracker = text.Colors{text.FgCyan}
 	pw.Style().Options.PercentFormat = "%4.1f%%"
-	// 设置时间精度为秒，减少小数位显示
 	pw.Style().Options.TimeInProgressPrecision = time.Millisecond * 100
 	pw.Style().Options.TimeDonePrecision = time.Millisecond * 100
 	pw.Style().Options.TimeOverallPrecision = time.Millisecond * 100
-	// 创建唯一的总体进度条
+
 	tracker := &progress.Tracker{
 		Message: fmt.Sprintf("%-40s", title),
 		Total:   int64(total),
@@ -346,294 +323,155 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	return progressTracker
 }
 
-// Increment 增加进度（完成一个任务）
 func (pt *ProgressTracker) Increment() {
 	pt.mu.Lock()
 	pt.completed++
 	completed := pt.completed
 	pt.mu.Unlock()
 
-	// 在锁外更新 tracker，减少锁持有时间
 	if pt.tracker != nil {
 		pt.tracker.SetValue(completed)
 	}
 }
 
-// AddFailedHost 添加失败的主机（立即打印红色错误信息）
 func (pt *ProgressTracker) AddFailedHost(host string, reason string) {
 	pt.mu.Lock()
 	pt.failedHosts = append(pt.failedHosts, host)
 	pt.mu.Unlock()
 
-	// 使用快速路径格式化，减少锁竞争
-	// 注意：这里仍然使用同步输出，但在高并发下可以考虑异步批量输出
-	// 为了简单和可靠性，暂时保持同步输出
 	fmt.Fprintf(os.Stderr, "%s %s: %s\n",
 		text.Colors{text.FgRed}.Sprint("✗"),
 		text.Colors{text.FgRed}.Sprint(host),
 		text.Colors{text.FgRed}.Sprint(reason))
 }
 
-// GetFailedHosts 获取失败的主机列表
 func (pt *ProgressTracker) GetFailedHosts() []string {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 	return pt.failedHosts
 }
 
-// Stop 停止进度跟踪器
 func (pt *ProgressTracker) Stop() {
 	pt.mu.Lock()
-	// 确保 tracker 标记为完成状态（如果还没有完成）
 	if pt.tracker != nil && pt.completed < pt.total {
 		pt.tracker.SetValue(pt.total)
 	}
 	pt.mu.Unlock()
 
-	// 停止进度条
 	pt.pw.Stop()
-
-	// 等待一小段时间，确保渲染 goroutine 完成最后的输出
 	time.Sleep(200 * time.Millisecond)
 }
 
 // PrintPingConfig 打印 ping 命令的配置参数
 func PrintPingConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port string, concurrency int) {
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	setupTableStyle(t)
-	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
-	t.AppendHeader(table.Row{"参数", "值"})
-
-	// 主机列表来源
-	var hostsSource string
-	if hostsDir != "" {
-		hostsSource = fmt.Sprintf("目录 (%s)", hostsDir)
-	} else if hostsFile != "" {
-		hostsSource = fmt.Sprintf("文件 (%s)", hostsFile)
-	} else if hostsString != "" {
-		hostsSource = fmt.Sprintf("命令行参数 (%s)", hostsString)
-	} else {
-		hostsSource = text.Colors{text.FgHiYellow}.Sprint("ansible.cfg inventory")
+	t := createConfigTable(false)
+	data := &ConfigData{
+		HostsFile:   hostsFile,
+		HostsDir:    hostsDir,
+		HostsString: hostsString,
+		Group:       group,
+		User:        user,
+		KeyPath:     keyPath,
+		Password:    password,
+		Port:        port,
+		Concurrency: concurrency,
 	}
-	t.AppendRow(table.Row{"主机列表来源", hostsSource})
-
-	if group != "" {
-		t.AppendRow(table.Row{"分组", text.Colors{text.FgCyan}.Sprint(group)})
-	}
-
-	// 认证信息
-	t.AppendRow(table.Row{"用户名", getValueOrDefault(user, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))})
-	t.AppendRow(table.Row{"SSH 密钥", getValueOrDefault(keyPath, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))})
-	if password != "" {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgGreen}.Sprint("***已设置***")})
-	} else {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgHiBlack}.Sprint("(未设置)")})
-	}
-	t.AppendRow(table.Row{"SSH 端口", getValueOrDefault(port, "22")})
-	t.AppendRow(table.Row{"并发数", text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("%d", concurrency))})
-
-	fmt.Println()
-	t.Render()
-	fmt.Println()
+	printCommonConfig(t, data)
+	renderConfigTable(t)
 }
 
 // PrintRunConfig 打印 run 命令的配置参数
 func PrintRunConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port, command string, become bool, becomeUser string, concurrency int, showOutput bool) {
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	setupTableStyle(t)
-	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
-	t.AppendHeader(table.Row{"参数", "值"})
-
-	// 设置列配置：第一列（参数）宽度固定，第二列（值）自动换行，最大宽度80
-	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 15}, // 参数列最大宽度15
-		{Number: 2, WidthMax: 80}, // 值列最大宽度80，超出自动换行
-	})
-
-	// 辅助函数：包装长文本（处理包含 ANSI 颜色代码的文本）
-	wrapText := func(s string, maxWidth int) string {
-		// 使用 text.WrapHard 进行硬换行，保留 ANSI 颜色代码
-		return text.WrapHard(s, maxWidth)
+	t := createConfigTable(true)
+	data := &ConfigData{
+		HostsFile:    hostsFile,
+		HostsDir:     hostsDir,
+		HostsString:  hostsString,
+		Group:        group,
+		User:         user,
+		KeyPath:      keyPath,
+		Password:     password,
+		Port:         port,
+		Concurrency:  concurrency,
+		Command:      command,
+		Become:       become,
+		BecomeUser:   becomeUser,
+		ShowOutput:   showOutput,
+		NeedWrapText: true,
 	}
+	printCommonConfig(t, data)
 
-	// 主机列表来源
-	var hostsSource string
-	if hostsDir != "" {
-		hostsSource = fmt.Sprintf("目录 (%s)", hostsDir)
-	} else if hostsFile != "" {
-		hostsSource = fmt.Sprintf("文件 (%s)", hostsFile)
-	} else if hostsString != "" {
-		hostsSource = fmt.Sprintf("命令行参数 (%s)", hostsString)
-	} else {
-		hostsSource = text.Colors{text.FgHiYellow}.Sprint("ansible.cfg inventory")
-	}
-	t.AppendRow(table.Row{"主机列表来源", wrapText(hostsSource, 80)})
-
-	if group != "" {
-		t.AppendRow(table.Row{"分组", text.Colors{text.FgCyan}.Sprint(group)})
-	}
-
-	// 认证信息
-	t.AppendRow(table.Row{"用户名", getValueOrDefault(user, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))})
-	keyPathValue := getValueOrDefault(keyPath, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))
-	t.AppendRow(table.Row{"SSH 密钥", wrapText(keyPathValue, 80)})
-	if password != "" {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgGreen}.Sprint("***已设置***")})
-	} else {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgHiBlack}.Sprint("(未设置)")})
-	}
-	t.AppendRow(table.Row{"SSH 端口", getValueOrDefault(port, "22")})
-	t.AppendRow(table.Row{"并发数", text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("%d", concurrency))})
-
-	// 执行内容 - 长命令需要换行
 	if command != "" {
+		wrapText := func(s string, maxWidth int) string {
+			return text.WrapHard(s, maxWidth)
+		}
 		commandText := text.Colors{text.FgYellow}.Sprint(command)
 		t.AppendRow(table.Row{"执行命令", wrapText(commandText, 80)})
 	}
 
-	// Become 模式
-	if become {
-		becomeUserText := becomeUser
-		if becomeUserText == "" {
-			becomeUserText = "root"
-		}
-		t.AppendRow(table.Row{"Become 模式", text.Colors{text.FgGreen}.Sprint("是")})
-		t.AppendRow(table.Row{"Become 用户", text.Colors{text.FgCyan}.Sprint(becomeUserText)})
-	} else {
-		t.AppendRow(table.Row{"Become 模式", text.Colors{text.FgHiBlack}.Sprint("否")})
-	}
-
-	var outputStatus string
-	if showOutput {
-		outputStatus = text.Colors{text.FgGreen}.Sprint("是")
-	} else {
-		outputStatus = text.Colors{text.FgHiBlack}.Sprint("否")
-	}
-	t.AppendRow(table.Row{"显示输出", outputStatus})
-
-	fmt.Println()
-	t.Render()
-	fmt.Println()
+	printBecomeConfig(t, become, becomeUser)
+	printOutputConfig(t, showOutput)
+	renderConfigTable(t)
 }
 
 // PrintScriptConfig 打印 script 命令的配置参数
 func PrintScriptConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port, scriptPath string, become bool, becomeUser string, concurrency int, showOutput bool) {
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	setupTableStyle(t)
-	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
-	t.AppendHeader(table.Row{"参数", "值"})
-
-	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 15},
-		{Number: 2, WidthMax: 80},
-	})
-
-	wrapText := func(s string, maxWidth int) string {
-		return text.WrapHard(s, maxWidth)
+	t := createConfigTable(true)
+	data := &ConfigData{
+		HostsFile:    hostsFile,
+		HostsDir:     hostsDir,
+		HostsString:  hostsString,
+		Group:        group,
+		User:         user,
+		KeyPath:      keyPath,
+		Password:     password,
+		Port:         port,
+		Concurrency:  concurrency,
+		ScriptPath:   scriptPath,
+		Become:       become,
+		BecomeUser:   becomeUser,
+		ShowOutput:   showOutput,
+		NeedWrapText: true,
 	}
-
-	var hostsSource string
-	if hostsDir != "" {
-		hostsSource = fmt.Sprintf("目录 (%s)", hostsDir)
-	} else if hostsFile != "" {
-		hostsSource = fmt.Sprintf("文件 (%s)", hostsFile)
-	} else if hostsString != "" {
-		hostsSource = fmt.Sprintf("命令行参数 (%s)", hostsString)
-	} else {
-		hostsSource = text.Colors{text.FgHiYellow}.Sprint("ansible.cfg inventory")
-	}
-	t.AppendRow(table.Row{"主机列表来源", wrapText(hostsSource, 80)})
-
-	if group != "" {
-		t.AppendRow(table.Row{"分组", text.Colors{text.FgCyan}.Sprint(group)})
-	}
-
-	t.AppendRow(table.Row{"用户名", getValueOrDefault(user, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))})
-	keyPathValue := getValueOrDefault(keyPath, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))
-	t.AppendRow(table.Row{"SSH 密钥", wrapText(keyPathValue, 80)})
-	if password != "" {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgGreen}.Sprint("***已设置***")})
-	} else {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgHiBlack}.Sprint("(未设置)")})
-	}
-	t.AppendRow(table.Row{"SSH 端口", getValueOrDefault(port, "22")})
-	t.AppendRow(table.Row{"并发数", text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("%d", concurrency))})
+	printCommonConfig(t, data)
 
 	if scriptPath != "" {
+		wrapText := func(s string, maxWidth int) string {
+			return text.WrapHard(s, maxWidth)
+		}
 		scriptText := text.Colors{text.FgYellow}.Sprint(scriptPath)
 		t.AppendRow(table.Row{"执行脚本", wrapText(scriptText, 80)})
 	}
 
-	if become {
-		becomeUserText := becomeUser
-		if becomeUserText == "" {
-			becomeUserText = "root"
-		}
-		t.AppendRow(table.Row{"Become 模式", text.Colors{text.FgGreen}.Sprint("是")})
-		t.AppendRow(table.Row{"Become 用户", text.Colors{text.FgCyan}.Sprint(becomeUserText)})
-	} else {
-		t.AppendRow(table.Row{"Become 模式", text.Colors{text.FgHiBlack}.Sprint("否")})
-	}
-
-	var outputStatus string
-	if showOutput {
-		outputStatus = text.Colors{text.FgGreen}.Sprint("是")
-	} else {
-		outputStatus = text.Colors{text.FgHiBlack}.Sprint("否")
-	}
-	t.AppendRow(table.Row{"显示输出", outputStatus})
-
-	fmt.Println()
-	t.Render()
-	fmt.Println()
+	printBecomeConfig(t, become, becomeUser)
+	printOutputConfig(t, showOutput)
+	renderConfigTable(t)
 }
 
 // PrintUploadConfig 打印 upload 命令的配置参数
 func PrintUploadConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port, localPath, remotePath, mode string, concurrency int, showOutput bool) {
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	setupTableStyle(t)
-	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
-	t.AppendHeader(table.Row{"参数", "值"})
-
-	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 15},
-		{Number: 2, WidthMax: 80},
-	})
+	t := createConfigTable(true)
+	data := &ConfigData{
+		HostsFile:    hostsFile,
+		HostsDir:     hostsDir,
+		HostsString:  hostsString,
+		Group:        group,
+		User:         user,
+		KeyPath:      keyPath,
+		Password:     password,
+		Port:         port,
+		Concurrency:  concurrency,
+		LocalPath:    localPath,
+		RemotePath:   remotePath,
+		Mode:         mode,
+		ShowOutput:   showOutput,
+		NeedWrapText: true,
+	}
+	printCommonConfig(t, data)
 
 	wrapText := func(s string, maxWidth int) string {
 		return text.WrapHard(s, maxWidth)
 	}
-
-	var hostsSource string
-	if hostsDir != "" {
-		hostsSource = fmt.Sprintf("目录 (%s)", hostsDir)
-	} else if hostsFile != "" {
-		hostsSource = fmt.Sprintf("文件 (%s)", hostsFile)
-	} else if hostsString != "" {
-		hostsSource = fmt.Sprintf("命令行参数 (%s)", hostsString)
-	} else {
-		hostsSource = text.Colors{text.FgHiYellow}.Sprint("ansible.cfg inventory")
-	}
-	t.AppendRow(table.Row{"主机列表来源", wrapText(hostsSource, 80)})
-
-	if group != "" {
-		t.AppendRow(table.Row{"分组", text.Colors{text.FgCyan}.Sprint(group)})
-	}
-
-	t.AppendRow(table.Row{"用户名", getValueOrDefault(user, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))})
-	keyPathValue := getValueOrDefault(keyPath, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))
-	t.AppendRow(table.Row{"SSH 密钥", wrapText(keyPathValue, 80)})
-	if password != "" {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgGreen}.Sprint("***已设置***")})
-	} else {
-		t.AppendRow(table.Row{"密码", text.Colors{text.FgHiBlack}.Sprint("(未设置)")})
-	}
-	t.AppendRow(table.Row{"SSH 端口", getValueOrDefault(port, "22")})
-	t.AppendRow(table.Row{"并发数", text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("%d", concurrency))})
 
 	if localPath != "" {
 		localText := text.Colors{text.FgYellow}.Sprint(localPath)
@@ -645,50 +483,26 @@ func PrintUploadConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, p
 	}
 	t.AppendRow(table.Row{"文件权限", text.Colors{text.FgCyan}.Sprint(getValueOrDefault(mode, "0644"))})
 
-	var outputStatus string
-	if showOutput {
-		outputStatus = text.Colors{text.FgGreen}.Sprint("是")
-	} else {
-		outputStatus = text.Colors{text.FgHiBlack}.Sprint("否")
-	}
-	t.AppendRow(table.Row{"显示输出", outputStatus})
-
-	fmt.Println()
-	t.Render()
-	fmt.Println()
+	printOutputConfig(t, showOutput)
+	renderConfigTable(t)
 }
 
 // PrintListConfig 打印 list 命令的配置参数
 func PrintListConfig(hostsFile, hostsDir, hostsString, group, format string) {
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	setupTableStyle(t)
-	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
-	t.AppendHeader(table.Row{"参数", "值"})
-
-	// 主机列表来源
-	var hostsSource string
-	if hostsDir != "" {
-		hostsSource = fmt.Sprintf("目录 (%s)", hostsDir)
-	} else if hostsFile != "" {
-		hostsSource = fmt.Sprintf("文件 (%s)", hostsFile)
-	} else if hostsString != "" {
-		hostsSource = fmt.Sprintf("命令行参数 (%s)", hostsString)
-	} else {
-		hostsSource = text.Colors{text.FgHiYellow}.Sprint("ansible.cfg inventory")
+	t := createConfigTable(false)
+	data := &ConfigData{
+		HostsFile:   hostsFile,
+		HostsDir:    hostsDir,
+		HostsString: hostsString,
+		Group:       group,
+		Format:      format,
 	}
-	t.AppendRow(table.Row{"主机列表来源", hostsSource})
-
-	if group != "" {
-		t.AppendRow(table.Row{"分组", text.Colors{text.FgCyan}.Sprint(group)})
-	}
+	printCommonConfig(t, data)
 
 	formatValue := getValueOrDefault(format, "ip")
 	t.AppendRow(table.Row{"输出格式", text.Colors{text.FgCyan}.Sprint(formatValue)})
 
-	fmt.Println()
-	t.Render()
-	fmt.Println()
+	renderConfigTable(t)
 }
 
 // getValueOrDefault 获取值或默认值
@@ -697,4 +511,118 @@ func getValueOrDefault(value, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// ConfigData 配置数据结构
+type ConfigData struct {
+	HostsFile    string
+	HostsDir     string
+	HostsString  string
+	Group        string
+	User         string
+	KeyPath      string
+	Password     string
+	Port         string
+	Concurrency  int
+	Command      string
+	ScriptPath   string
+	LocalPath    string
+	RemotePath   string
+	Mode         string
+	Become       bool
+	BecomeUser   string
+	ShowOutput   bool
+	Format       string
+	NeedWrapText bool
+}
+
+// printCommonConfig 打印公共配置部分
+func printCommonConfig(t table.Writer, data *ConfigData) {
+	wrapText := func(s string, maxWidth int) string {
+		if data.NeedWrapText {
+			return text.WrapHard(s, maxWidth)
+		}
+		return s
+	}
+
+	var hostsSource string
+	if data.HostsDir != "" {
+		hostsSource = fmt.Sprintf("目录 (%s)", data.HostsDir)
+	} else if data.HostsFile != "" {
+		hostsSource = fmt.Sprintf("文件 (%s)", data.HostsFile)
+	} else if data.HostsString != "" {
+		hostsSource = fmt.Sprintf("命令行参数 (%s)", data.HostsString)
+	} else {
+		hostsSource = text.Colors{text.FgHiYellow}.Sprint("ansible.cfg inventory")
+	}
+	t.AppendRow(table.Row{"主机列表来源", wrapText(hostsSource, 80)})
+
+	if data.Group != "" {
+		t.AppendRow(table.Row{"分组", text.Colors{text.FgCyan}.Sprint(data.Group)})
+	}
+
+	t.AppendRow(table.Row{"用户名", getValueOrDefault(data.User, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))})
+
+	keyPathValue := getValueOrDefault(data.KeyPath, text.Colors{text.FgHiBlack}.Sprint("(未设置)"))
+	t.AppendRow(table.Row{"SSH 密钥", wrapText(keyPathValue, 80)})
+
+	if data.Password != "" {
+		t.AppendRow(table.Row{"密码", text.Colors{text.FgGreen}.Sprint("***已设置***")})
+	} else {
+		t.AppendRow(table.Row{"密码", text.Colors{text.FgHiBlack}.Sprint("(未设置)")})
+	}
+
+	t.AppendRow(table.Row{"SSH 端口", getValueOrDefault(data.Port, "22")})
+
+	if data.Concurrency > 0 {
+		t.AppendRow(table.Row{"并发数", text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("%d", data.Concurrency))})
+	}
+}
+
+// printBecomeConfig 打印 Become 相关配置
+func printBecomeConfig(t table.Writer, become bool, becomeUser string) {
+	if become {
+		becomeUserText := becomeUser
+		if becomeUserText == "" {
+			becomeUserText = "root"
+		}
+		t.AppendRow(table.Row{"Become 模式", text.Colors{text.FgGreen}.Sprint("是")})
+		t.AppendRow(table.Row{"Become 用户", text.Colors{text.FgCyan}.Sprint(becomeUserText)})
+	} else {
+		t.AppendRow(table.Row{"Become 模式", text.Colors{text.FgHiBlack}.Sprint("否")})
+	}
+}
+
+// printOutputConfig 打印输出相关配置
+func printOutputConfig(t table.Writer, showOutput bool) {
+	var outputStatus string
+	if showOutput {
+		outputStatus = text.Colors{text.FgGreen}.Sprint("是")
+	} else {
+		outputStatus = text.Colors{text.FgHiBlack}.Sprint("否")
+	}
+	t.AppendRow(table.Row{"显示输出", outputStatus})
+}
+
+// createConfigTable 创建配置表格
+func createConfigTable(needWrap bool) table.Writer {
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	setupTableStyle(t)
+	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
+	t.AppendHeader(table.Row{"参数", "值"})
+	if needWrap {
+		t.SetColumnConfigs([]table.ColumnConfig{
+			{Number: 1, WidthMax: 15},
+			{Number: 2, WidthMax: 80},
+		})
+	}
+	return t
+}
+
+// renderConfigTable 渲染配置表格
+func renderConfigTable(t table.Writer) {
+	fmt.Println()
+	t.Render()
+	fmt.Println()
 }

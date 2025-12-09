@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"gossh/internal/config"
 	"gossh/internal/executor"
 	"gossh/internal/ssh"
 	"gossh/internal/view"
@@ -111,7 +110,7 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 
 // mergeConfig 合并配置（优先级：命令行参数 > ansible.cfg > 默认值）
 func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
-	merged := &PingRequest{
+	commonCfg := MergeCommonConfig(&CommonConfig{
 		HostsFile:   req.HostsFile,
 		HostsDir:    req.HostsDir,
 		HostsString: req.HostsString,
@@ -121,41 +120,19 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 		Password:    req.Password,
 		Port:        req.Port,
 		Concurrency: req.Concurrency,
-	}
+	})
 
-	// 加载 ansible.cfg
-	ansibleCfg, err := config.LoadAnsibleConfig()
-	if err != nil {
-		// 如果加载失败，使用默认值
-		if merged.Concurrency == 0 {
-			merged.Concurrency = 5
-		}
-		return merged
+	return &PingRequest{
+		HostsFile:   commonCfg.HostsFile,
+		HostsDir:    commonCfg.HostsDir,
+		HostsString: commonCfg.HostsString,
+		Group:       commonCfg.Group,
+		User:        commonCfg.User,
+		KeyPath:     commonCfg.KeyPath,
+		Password:    commonCfg.Password,
+		Port:        commonCfg.Port,
+		Concurrency: commonCfg.Concurrency,
 	}
-
-	// 合并配置（命令行参数优先）
-	if merged.User == "" {
-		merged.User = ansibleCfg.RemoteUser
-	}
-
-	if merged.KeyPath == "" {
-		merged.KeyPath = ansibleCfg.PrivateKeyFile
-	}
-
-	if merged.Port == "" || merged.Port == "22" {
-		// Port 在 ansible.cfg 中没有对应项，保持默认值
-		merged.Port = "22"
-	}
-
-	if merged.Concurrency == 0 {
-		if ansibleCfg.Forks > 0 {
-			merged.Concurrency = ansibleCfg.Forks
-		} else {
-			merged.Concurrency = 5
-		}
-	}
-
-	return merged
 }
 
 // validateRequest 验证请求参数
@@ -171,50 +148,12 @@ func (c *PingController) validateRequest(req *PingRequest) error {
 
 // loadHosts 加载主机列表
 func (c *PingController) loadHosts(req *PingRequest) ([]executor.Host, error) {
-	var hosts []executor.Host
-	var err error
-
-	// 优先级：命令行参数 > ansible.cfg > 默认值
-	// 如果命令行没有指定主机来源，尝试从 ansible.cfg 加载
-	if req.HostsDir == "" && req.HostsFile == "" && req.HostsString == "" {
-		ansibleCfg, err := config.LoadAnsibleConfig()
-		if err == nil && ansibleCfg.Inventory != "" {
-			// 从 ansible.cfg 的 inventory 加载
-			hosts, err = config.LoadHostsFromInventory(ansibleCfg.Inventory, req.Group)
-			if err != nil {
-				return nil, fmt.Errorf("从 ansible.cfg inventory 加载主机列表失败: %w", err)
-			}
-			return hosts, nil
-		}
-		return nil, fmt.Errorf("必须指定主机列表（-f、-d、-H 或 ansible.cfg 中的 inventory）")
-	}
-
-	// 使用命令行参数指定的方式加载
-	if req.HostsDir != "" {
-		// 从目录加载所有 INI 文件
-		hosts, err = config.LoadHostsFromDirectory(req.HostsDir, req.Group)
-		if err != nil {
-			return nil, fmt.Errorf("从目录加载主机列表失败: %w", err)
-		}
-	} else if req.HostsFile != "" {
-		// 从单个文件加载
-		hosts, err = config.LoadHostsFromFileWithGroup(req.HostsFile, req.Group)
-		if err != nil {
-			return nil, fmt.Errorf("加载主机列表失败: %w", err)
-		}
-	} else if req.HostsString != "" {
-		// 从字符串加载
-		hosts, err = config.LoadHostsFromString(req.HostsString)
-		if err != nil {
-			return nil, fmt.Errorf("解析主机列表失败: %w", err)
-		}
-	}
-
-	if len(hosts) == 0 {
-		return nil, fmt.Errorf("主机列表为空")
-	}
-
-	return hosts, nil
+	return LoadHosts(&CommonConfig{
+		HostsFile:   req.HostsFile,
+		HostsDir:    req.HostsDir,
+		HostsString: req.HostsString,
+		Group:       req.Group,
+	}, true)
 }
 
 // executePing 并发执行 ping 测试
