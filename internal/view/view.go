@@ -85,7 +85,7 @@ func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOut
 		for _, result := range results {
 			// 判断是否成功
 			isSuccess := result.Error == nil && result.ExitCode == 0
-			
+
 			// 主机名颜色：成功用绿色，失败用红色
 			var hostColor text.Colors
 			if isSuccess {
@@ -94,54 +94,54 @@ func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOut
 				hostColor = text.Colors{text.FgRed, text.Bold}
 			}
 			fmt.Printf("\n%s\n", hostColor.Sprint("["+result.Host+"]"))
-			
+
 			// 标准输出（成功时显示）
 			if result.Stdout != "" {
-				fmt.Printf("%s\n%s\n", 
+				fmt.Printf("%s\n%s\n",
 					text.Colors{text.FgHiWhite}.Sprint("标准输出:"),
 					result.Stdout)
 			}
-			
+
 			// 标准错误（失败时显示，用红色）
 			if result.Stderr != "" {
-				fmt.Printf("%s\n%s\n", 
+				fmt.Printf("%s\n%s\n",
 					text.Colors{text.FgRed}.Sprint("标准错误:"),
 					text.Colors{text.FgRed}.Sprint(result.Stderr))
 			}
-			
+
 			// 错误信息（失败时显示，用红色）
 			if result.Error != nil {
-				fmt.Printf("%s %s\n", 
+				fmt.Printf("%s %s\n",
 					text.Colors{text.FgRed}.Sprint("错误:"),
 					text.Colors{text.FgRed}.Sprint(result.Error.Error()))
 			}
-			
+
 			// 分隔线用灰色
 			fmt.Println(text.Colors{text.FgHiBlack}.Sprint(strings.Repeat("-", 80)))
 		}
 	}
 
 	// 打印汇总信息
-	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n", 
+	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n",
 		len(results),
 		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", successCount)),
 		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", failCount)),
 		totalDuration.Round(time.Millisecond).String())
-	
+
 	// 打印成功的主机列表
 	if len(successHosts) > 0 {
 		fmt.Printf("%s: %s\n",
 			text.Colors{text.FgGreen, text.Bold}.Sprint("成功主机"),
 			text.Colors{text.FgGreen}.Sprint(strings.Join(successHosts, ", ")))
 	}
-	
+
 	// 打印失败的主机列表
 	if len(failHosts) > 0 {
 		fmt.Printf("%s: %s\n",
 			text.Colors{text.FgRed, text.Bold}.Sprint("失败主机"),
 			text.Colors{text.FgRed}.Sprint(strings.Join(failHosts, ", ")))
 	}
-	
+
 	fmt.Println()
 }
 
@@ -183,7 +183,7 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 	t.Render()
 
 	// 打印汇总信息
-	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n\n", 
+	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n\n",
 		len(results),
 		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", successCount)),
 		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", failCount)),
@@ -290,9 +290,9 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	pw := progress.NewWriter()
 	pw.SetAutoStop(true)
 	pw.SetTrackerLength(50)
-	pw.SetMessageWidth(40)
+	pw.SetMessageLength(40)
 	pw.SetNumTrackersExpected(1) // 只有一个进度条
-	pw.SetStyle(progress.StyleCircle)
+	pw.SetStyle(progress.StyleDefault)
 	pw.SetTrackerPosition(progress.PositionRight)
 	pw.SetUpdateFrequency(time.Millisecond * 100)
 
@@ -301,7 +301,10 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	pw.Style().Colors.Stats = text.Colors{text.FgHiWhite}
 	pw.Style().Colors.Tracker = text.Colors{text.FgCyan}
 	pw.Style().Options.PercentFormat = "%4.1f%%"
-
+	// 设置时间精度为秒，减少小数位显示
+	pw.Style().Options.TimeInProgressPrecision = time.Millisecond * 100
+	pw.Style().Options.TimeDonePrecision = time.Millisecond * 100
+	pw.Style().Options.TimeOverallPrecision = time.Millisecond * 100
 	// 创建唯一的总体进度条
 	tracker := &progress.Tracker{
 		Message: fmt.Sprintf("%-40s", title),
@@ -407,7 +410,7 @@ func PrintRunConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, pass
 	setupTableStyle(t)
 	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
 	t.AppendHeader(table.Row{"参数", "值"})
-	
+
 	// 设置列配置：第一列（参数）宽度固定，第二列（值）自动换行，最大宽度80
 	t.SetColumnConfigs([]table.ColumnConfig{
 		{Number: 1, WidthMax: 15}, // 参数列最大宽度15
@@ -487,7 +490,7 @@ func PrintScriptConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, p
 	setupTableStyle(t)
 	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
 	t.AppendHeader(table.Row{"参数", "值"})
-	
+
 	t.SetColumnConfigs([]table.ColumnConfig{
 		{Number: 1, WidthMax: 15},
 		{Number: 2, WidthMax: 80},
@@ -560,7 +563,7 @@ func PrintUploadConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, p
 	setupTableStyle(t)
 	t.SetTitle(text.Colors{text.FgHiCyan, text.Bold}.Sprint("当前配置参数"))
 	t.AppendHeader(table.Row{"参数", "值"})
-	
+
 	t.SetColumnConfigs([]table.ColumnConfig{
 		{Number: 1, WidthMax: 15},
 		{Number: 2, WidthMax: 80},
