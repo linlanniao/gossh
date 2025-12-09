@@ -31,6 +31,9 @@ builds:
         -X {{.Env.VERSION_PACKAGE}}.BuildUser=github-action
         -X {{.Env.VERSION_PACKAGE}}.BuildDate={{ .Date }}
 
+release:
+  mode: replace
+
 changelog:
   sort: asc
   filters:
