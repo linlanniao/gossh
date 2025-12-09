@@ -231,7 +231,26 @@ func (c *PingController) executePing(hosts []executor.Host, user, keyPath, passw
 	for i, host := range hosts {
 		wg.Add(1)
 		go func(idx int, h executor.Host) {
-			defer wg.Done()
+			// 确保 wg.Done() 总是被调用，即使发生 panic
+			defer func() {
+				if r := recover(); r != nil {
+					// 捕获 panic，记录错误并确保资源释放
+					mu.Lock()
+					if results[idx] == nil {
+						results[idx] = &ssh.PingResult{
+							Host:     h.Address,
+							Success:  false,
+							Duration: 0,
+							Error:    fmt.Errorf("panic: %v", r),
+						}
+					}
+					mu.Unlock()
+					if progressCallback != nil {
+						progressCallback(h.Address, fmt.Sprintf("panic: %v", r), 100, true)
+					}
+				}
+				wg.Done()
+			}()
 
 			hostAddr := h.Address
 

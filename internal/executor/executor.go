@@ -72,10 +72,33 @@ func (e *Executor) ExecuteCommandWithBecome(command string, concurrency int, bec
 	for i, host := range e.hosts {
 		wg.Add(1)
 		go func(idx int, h Host) {
-			defer wg.Done()
-
 			hostAddr := h.Address
 			startTime := time.Now()
+
+			// 确保 wg.Done() 总是被调用，即使发生 panic
+			defer func() {
+				if r := recover(); r != nil {
+					// 捕获 panic，记录错误并确保资源释放
+					duration := time.Since(startTime)
+					mu.Lock()
+					if results[idx] == nil {
+						results[idx] = &ssh.Result{
+							Host:     h.Address,
+							Command:  command,
+							Stdout:   "",
+							Stderr:   fmt.Sprintf("panic: %v", r),
+							ExitCode: -1,
+							Duration: duration,
+							Error:    fmt.Errorf("panic: %v", r),
+						}
+					}
+					mu.Unlock()
+					if progressCallback != nil {
+						progressCallback(h.Address, fmt.Sprintf("panic: %v", r), 100, true)
+					}
+				}
+				wg.Done()
+			}()
 
 			// 限制并发数
 			semaphore <- struct{}{}
@@ -172,10 +195,33 @@ func (e *Executor) ExecuteScriptWithBecome(scriptPath string, concurrency int, b
 	for i, host := range e.hosts {
 		wg.Add(1)
 		go func(idx int, h Host) {
-			defer wg.Done()
-
 			hostAddr := h.Address
 			startTime := time.Now()
+
+			// 确保 wg.Done() 总是被调用，即使发生 panic
+			defer func() {
+				if r := recover(); r != nil {
+					// 捕获 panic，记录错误并确保资源释放
+					duration := time.Since(startTime)
+					mu.Lock()
+					if results[idx] == nil {
+						results[idx] = &ssh.Result{
+							Host:     h.Address,
+							Command:  scriptPath,
+							Stdout:   "",
+							Stderr:   fmt.Sprintf("panic: %v", r),
+							ExitCode: -1,
+							Duration: duration,
+							Error:    fmt.Errorf("panic: %v", r),
+						}
+					}
+					mu.Unlock()
+					if progressCallback != nil {
+						progressCallback(h.Address, fmt.Sprintf("panic: %v", r), 100, true)
+					}
+				}
+				wg.Done()
+			}()
 
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
@@ -265,10 +311,33 @@ func (e *Executor) UploadFile(localPath string, remotePath string, mode string, 
 	for i, host := range e.hosts {
 		wg.Add(1)
 		go func(idx int, h Host) {
-			defer wg.Done()
-
 			hostAddr := h.Address
 			startTime := time.Now()
+
+			// 确保 wg.Done() 总是被调用，即使发生 panic
+			defer func() {
+				if r := recover(); r != nil {
+					// 捕获 panic，记录错误并确保资源释放
+					duration := time.Since(startTime)
+					mu.Lock()
+					if results[idx] == nil {
+						results[idx] = &ssh.Result{
+							Host:     h.Address,
+							Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
+							Stdout:   "",
+							Stderr:   fmt.Sprintf("panic: %v", r),
+							ExitCode: -1,
+							Duration: duration,
+							Error:    fmt.Errorf("panic: %v", r),
+						}
+					}
+					mu.Unlock()
+					if progressCallback != nil {
+						progressCallback(h.Address, fmt.Sprintf("panic: %v", r), 100, true)
+					}
+				}
+				wg.Done()
+			}()
 
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()

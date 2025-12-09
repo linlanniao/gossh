@@ -150,13 +150,29 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 	successCount := 0
 	failCount := 0
 
+	// 过滤掉 nil 结果，避免 panic
+	validResults := make([]*ssh.PingResult, 0, len(results))
+	for _, result := range results {
+		if result != nil {
+			validResults = append(validResults, result)
+		}
+	}
+
+	// 如果没有有效结果，直接返回
+	if len(validResults) == 0 {
+		fmt.Printf("\n总计: 0 台主机 | 总耗时: %s\n\n",
+			totalDuration.Round(time.Millisecond).String())
+		return
+	}
+
 	// 创建表格
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	setupTableStyle(t)
 	t.AppendHeader(table.Row{"主机", "状态", "延迟", "错误信息"})
 
-	for _, result := range results {
+	// 批量处理结果，减少内存分配
+	for _, result := range validResults {
 		var status string
 		var duration string
 		var errorMsg string
@@ -172,7 +188,11 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 				duration = result.Duration.Round(time.Millisecond).String()
 			}
 			if result.Error != nil {
+				// 截断过长的错误信息，避免表格渲染过慢
 				errorMsg = result.Error.Error()
+				if len(errorMsg) > 100 {
+					errorMsg = errorMsg[:97] + "..."
+				}
 			}
 		}
 
@@ -184,7 +204,7 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 
 	// 打印汇总信息
 	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n\n",
-		len(results),
+		len(validResults),
 		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", successCount)),
 		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", failCount)),
 		totalDuration.Round(time.Millisecond).String())
@@ -294,7 +314,7 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	pw.SetNumTrackersExpected(1) // 只有一个进度条
 	pw.SetStyle(progress.StyleDefault)
 	pw.SetTrackerPosition(progress.PositionRight)
-	pw.SetUpdateFrequency(time.Millisecond * 100)
+	pw.SetUpdateFrequency(time.Millisecond * 200) // 降低更新频率，减少渲染开销
 
 	// 使用更柔和的颜色方案
 	pw.Style().Colors.Message = text.Colors{text.FgHiWhite}
@@ -329,11 +349,13 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 // Increment 增加进度（完成一个任务）
 func (pt *ProgressTracker) Increment() {
 	pt.mu.Lock()
-	defer pt.mu.Unlock()
-
 	pt.completed++
+	completed := pt.completed
+	pt.mu.Unlock()
+
+	// 在锁外更新 tracker，减少锁持有时间
 	if pt.tracker != nil {
-		pt.tracker.SetValue(pt.completed)
+		pt.tracker.SetValue(completed)
 	}
 }
 
@@ -343,7 +365,9 @@ func (pt *ProgressTracker) AddFailedHost(host string, reason string) {
 	pt.failedHosts = append(pt.failedHosts, host)
 	pt.mu.Unlock()
 
-	// 立即打印失败信息（红色）
+	// 使用快速路径格式化，减少锁竞争
+	// 注意：这里仍然使用同步输出，但在高并发下可以考虑异步批量输出
+	// 为了简单和可靠性，暂时保持同步输出
 	fmt.Fprintf(os.Stderr, "%s %s: %s\n",
 		text.Colors{text.FgRed}.Sprint("✗"),
 		text.Colors{text.FgRed}.Sprint(host),
@@ -359,7 +383,18 @@ func (pt *ProgressTracker) GetFailedHosts() []string {
 
 // Stop 停止进度跟踪器
 func (pt *ProgressTracker) Stop() {
+	pt.mu.Lock()
+	// 确保 tracker 标记为完成状态（如果还没有完成）
+	if pt.tracker != nil && pt.completed < pt.total {
+		pt.tracker.SetValue(pt.total)
+	}
+	pt.mu.Unlock()
+
+	// 停止进度条
 	pt.pw.Stop()
+
+	// 等待一小段时间，确保渲染 goroutine 完成最后的输出
+	time.Sleep(200 * time.Millisecond)
 }
 
 // PrintPingConfig 打印 ping 命令的配置参数
