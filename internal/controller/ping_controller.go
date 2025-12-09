@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"gossh/internal/config"
 	"gossh/internal/executor"
 	"gossh/internal/ssh"
 	"gossh/internal/view"
@@ -29,6 +30,7 @@ type PingRequest struct {
 	Password    string
 	Port        string
 	Concurrency int
+	Timeout     time.Duration // 连接超时时间
 }
 
 // PingResponse ping 命令的响应
@@ -53,6 +55,7 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 		mergedReq.Password,
 		mergedReq.Port,
 		mergedReq.Concurrency,
+		mergedReq.Timeout,
 	)
 
 	// 验证参数
@@ -75,22 +78,11 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 	// 创建进度跟踪器
 	progressTracker := view.NewProgressTracker(len(hosts), "SSH 连接测试")
 
-	// 创建进度回调函数
-	progressCallback := func(host string, stage string, value int64, isFailed bool) {
-		if value == 100 {
-			// 任务完成（成功或失败）
-			if isFailed {
-				progressTracker.AddFailedHost(host, stage)
-			}
-			progressTracker.Increment()
-		}
-	}
-
 	// 记录开始时间
 	startTime := time.Now()
 
-	// 执行 ping 测试
-	results, err := c.executePing(hosts, mergedReq.User, mergedReq.KeyPath, mergedReq.Password, port, mergedReq.Concurrency, progressCallback)
+	// 执行 ping 测试（超时时间已在 mergeConfig 中处理）
+	results, err := c.executePing(hosts, mergedReq.User, mergedReq.KeyPath, mergedReq.Password, port, mergedReq.Concurrency, mergedReq.Timeout, progressTracker)
 	if err != nil {
 		progressTracker.Stop()
 		return nil, fmt.Errorf("执行失败: %w", err)
@@ -122,6 +114,20 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 		Concurrency: req.Concurrency,
 	})
 
+	// 合并超时配置（优先级：命令行参数 > ansible.cfg > 默认值）
+	timeout := req.Timeout
+	if timeout <= 0 {
+		// 如果命令行未指定，尝试从 ansible.cfg 读取
+		ansibleCfg, err := config.LoadAnsibleConfig()
+		if err == nil && ansibleCfg.Timeout > 0 {
+			// ansible.cfg 中的 timeout 单位是秒
+			timeout = time.Duration(ansibleCfg.Timeout) * time.Second
+		} else {
+			// 默认值：30 秒
+			timeout = 30 * time.Second
+		}
+	}
+
 	return &PingRequest{
 		HostsFile:   commonCfg.HostsFile,
 		HostsDir:    commonCfg.HostsDir,
@@ -132,6 +138,7 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 		Password:    commonCfg.Password,
 		Port:        commonCfg.Port,
 		Concurrency: commonCfg.Concurrency,
+		Timeout:     timeout,
 	}
 }
 
@@ -157,7 +164,7 @@ func (c *PingController) loadHosts(req *PingRequest) ([]executor.Host, error) {
 }
 
 // executePing 并发执行 ping 测试
-func (c *PingController) executePing(hosts []executor.Host, user, keyPath, password, defaultPort string, concurrency int, progressCallback func(string, string, int64, bool)) ([]*ssh.PingResult, error) {
+func (c *PingController) executePing(hosts []executor.Host, user, keyPath, password, defaultPort string, concurrency int, timeout time.Duration, progressTracker *view.ProgressTracker) ([]*ssh.PingResult, error) {
 	if concurrency <= 0 {
 		concurrency = 5
 	}
@@ -184,20 +191,20 @@ func (c *PingController) executePing(hosts []executor.Host, user, keyPath, passw
 						}
 					}
 					mu.Unlock()
-					if progressCallback != nil {
-						progressCallback(h.Address, fmt.Sprintf("panic: %v", r), 100, true)
-					}
+					progressTracker.MarkTrackerErrored(h.Address, fmt.Sprintf("panic: %v", r))
 				}
 				wg.Done()
 			}()
 
 			hostAddr := h.Address
 
+			// 为主机创建 tracker
+			progressTracker.AddTracker(hostAddr)
+			progressTracker.UpdateTracker(hostAddr, 10, fmt.Sprintf("%s (连接中...)", hostAddr))
+
 			// 限制并发数
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-
-			// 连接阶段不需要回调，避免输出过多
 
 			// 使用主机特定的配置，如果没有则使用默认配置
 			hostKeyPath := h.KeyPath
@@ -213,7 +220,9 @@ func (c *PingController) executePing(hosts []executor.Host, user, keyPath, passw
 				port = defaultPort
 			}
 
-			client, err := ssh.NewClient(h.Address, port, hostUser, hostKeyPath, password)
+			progressTracker.UpdateTracker(hostAddr, 30, fmt.Sprintf("%s (创建客户端...)", hostAddr))
+			// 使用带超时的客户端创建方法
+			client, err := ssh.NewClientWithTimeout(h.Address, port, hostUser, hostKeyPath, password, timeout)
 			if err != nil {
 				mu.Lock()
 				results[idx] = &ssh.PingResult{
@@ -223,13 +232,13 @@ func (c *PingController) executePing(hosts []executor.Host, user, keyPath, passw
 					Error:    fmt.Errorf("创建客户端失败: %v", err),
 				}
 				mu.Unlock()
-				if progressCallback != nil {
-					progressCallback(hostAddr, fmt.Sprintf("连接失败: %v", err), 100, true)
-				}
+				progressTracker.MarkTrackerErrored(hostAddr, fmt.Sprintf("连接失败: %v", err))
 				return
 			}
 
-			result, err := client.Ping()
+			progressTracker.UpdateTracker(hostAddr, 60, fmt.Sprintf("%s (测试连接...)", hostAddr))
+			// 使用带超时的 Ping 方法
+			result, err := client.PingWithTimeout(timeout)
 			if err != nil {
 				mu.Lock()
 				results[idx] = &ssh.PingResult{
@@ -239,9 +248,7 @@ func (c *PingController) executePing(hosts []executor.Host, user, keyPath, passw
 					Error:    err,
 				}
 				mu.Unlock()
-				if progressCallback != nil {
-					progressCallback(hostAddr, fmt.Sprintf("测试失败: %v", err), 100, true)
-				}
+				progressTracker.MarkTrackerErrored(hostAddr, fmt.Sprintf("测试失败: %v", err))
 				return
 			}
 
@@ -249,12 +256,11 @@ func (c *PingController) executePing(hosts []executor.Host, user, keyPath, passw
 			results[idx] = result
 			mu.Unlock()
 
-			if progressCallback != nil {
-				if result.Success {
-					progressCallback(hostAddr, "成功", 100, false)
-				} else {
-					progressCallback(hostAddr, "失败", 100, true)
-				}
+			if result.Success {
+				progressTracker.UpdateTracker(hostAddr, 100, fmt.Sprintf("%s (成功)", hostAddr))
+				progressTracker.MarkTrackerDone(hostAddr)
+			} else {
+				progressTracker.MarkTrackerErrored(hostAddr, "连接失败")
 			}
 		}(i, host)
 	}

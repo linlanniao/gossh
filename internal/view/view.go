@@ -30,13 +30,13 @@ func setupTableStyle(t table.Writer) {
 // PrintRunResults 打印 run 命令的执行结果
 func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOutput bool) {
 	stats := collectRunStatistics(results)
-	
+
 	printRunResultsTable(results, stats)
-	
+
 	if showOutput {
 		printRunDetailedOutput(results)
 	}
-	
+
 	printRunSummary(results, stats, totalDuration)
 }
 
@@ -328,14 +328,23 @@ func printListJSON(hosts []executor.Host) {
 	fmt.Println(string(jsonData))
 }
 
+const (
+	// maxIndividualTrackers 最大独立 tracker 数量
+	// 超过此数量时，只显示聚合 tracker
+	maxIndividualTrackers = 20
+)
+
 // ProgressTracker 进度跟踪器
 type ProgressTracker struct {
-	pw          progress.Writer
-	tracker     *progress.Tracker
-	total       int64
-	completed   int64
-	failedHosts []string // 记录失败的主机
-	mu          sync.Mutex
+	pw             progress.Writer
+	trackers       map[string]*progress.Tracker // 主机地址 -> tracker 的映射
+	overallTracker *progress.Tracker            // 总体进度 tracker
+	total          int                          // 总主机数
+	completed      int                          // 已完成数量
+	failed         int                          // 失败数量
+	showIndividual bool                         // 是否显示独立 tracker
+	allHosts       map[string]bool              // 所有主机地址集合，用于跟踪未完成的主机
+	mu             sync.Mutex
 }
 
 // NewProgressTracker 创建新的进度跟踪器
@@ -344,10 +353,20 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	pw.SetAutoStop(true)
 	pw.SetTrackerLength(50)
 	pw.SetMessageLength(40)
-	pw.SetNumTrackersExpected(1)
+
+	// 根据主机数量决定显示策略
+	showIndividual := total <= maxIndividualTrackers
+	if showIndividual {
+		pw.SetNumTrackersExpected(total)
+	} else {
+		// 只显示一个总体 tracker
+		pw.SetNumTrackersExpected(1)
+	}
+
 	pw.SetStyle(progress.StyleDefault)
 	pw.SetTrackerPosition(progress.PositionRight)
-	pw.SetUpdateFrequency(time.Millisecond * 200)
+	pw.SetUpdateFrequency(time.Millisecond * 100)
+	pw.SetSortBy(progress.SortByPercentDsc)
 
 	pw.Style().Colors.Message = text.Colors{text.FgHiWhite}
 	pw.Style().Colors.Stats = text.Colors{text.FgHiWhite}
@@ -357,59 +376,193 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	pw.Style().Options.TimeDonePrecision = time.Millisecond * 100
 	pw.Style().Options.TimeOverallPrecision = time.Millisecond * 100
 
-	tracker := &progress.Tracker{
-		Message: fmt.Sprintf("%-40s", title),
-		Total:   int64(total),
-		Units:   progress.UnitsDefault,
-	}
-	pw.AppendTracker(tracker)
-
 	progressTracker := &ProgressTracker{
-		pw:          pw,
-		tracker:     tracker,
-		total:       int64(total),
-		completed:   0,
-		failedHosts: make([]string, 0),
+		pw:             pw,
+		trackers:       make(map[string]*progress.Tracker),
+		total:          total,
+		completed:      0,
+		failed:         0,
+		showIndividual: showIndividual,
+		allHosts:       make(map[string]bool),
 	}
 
+	// 如果主机数量较多，创建总体 tracker
+	if !showIndividual {
+		overallTracker := &progress.Tracker{
+			Message: fmt.Sprintf("%-40s", title),
+			Total:   int64(total),
+			Units:   progress.UnitsDefault,
+		}
+		pw.AppendTracker(overallTracker)
+		progressTracker.overallTracker = overallTracker
+	}
+
+	// 启动渲染
 	go pw.Render()
 
 	return progressTracker
 }
 
-func (pt *ProgressTracker) Increment() {
-	pt.mu.Lock()
-	pt.completed++
-	completed := pt.completed
-	pt.mu.Unlock()
-
-	if pt.tracker != nil {
-		pt.tracker.SetValue(completed)
-	}
-}
-
-func (pt *ProgressTracker) AddFailedHost(host string, reason string) {
-	pt.mu.Lock()
-	pt.failedHosts = append(pt.failedHosts, host)
-	pt.mu.Unlock()
-
-	fmt.Fprintf(os.Stderr, "%s %s: %s\n",
-		text.Colors{text.FgRed}.Sprint("✗"),
-		text.Colors{text.FgRed}.Sprint(host),
-		text.Colors{text.FgRed}.Sprint(reason))
-}
-
-func (pt *ProgressTracker) GetFailedHosts() []string {
+// AddTracker 为主机添加一个 tracker
+func (pt *ProgressTracker) AddTracker(host string) interface{} {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
-	return pt.failedHosts
+
+	// 记录所有主机
+	pt.allHosts[host] = false // false 表示未完成
+
+	// 如果主机数量较多，不创建独立 tracker
+	if !pt.showIndividual {
+		return nil
+	}
+
+	tracker := &progress.Tracker{
+		Message: fmt.Sprintf("%-40s", host),
+		Total:   100,
+		Units:   progress.UnitsDefault,
+	}
+	pt.pw.AppendTracker(tracker)
+	pt.trackers[host] = tracker
+
+	return tracker
 }
 
+// UpdateTracker 更新指定主机的 tracker 进度
+func (pt *ProgressTracker) UpdateTracker(host string, value int64, message string) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+
+	if pt.showIndividual {
+		// 显示独立 tracker 模式
+		tracker, exists := pt.trackers[host]
+		if !exists {
+			// 如果 tracker 不存在，创建一个
+			tracker = &progress.Tracker{
+				Message: fmt.Sprintf("%-40s", host),
+				Total:   100,
+				Units:   progress.UnitsDefault,
+			}
+			pt.pw.AppendTracker(tracker)
+			pt.trackers[host] = tracker
+		}
+
+		if value > 0 {
+			tracker.SetValue(value)
+		}
+		if message != "" {
+			tracker.UpdateMessage(fmt.Sprintf("%-40s", message))
+		}
+	} else {
+		// 聚合模式：只更新总体 tracker
+		if pt.overallTracker != nil {
+			// 计算总体进度（已完成数量）
+			completed := pt.completed
+			pt.overallTracker.SetValue(int64(completed))
+
+			// 更新消息显示统计信息
+			statusMsg := fmt.Sprintf("已完成: %d/%d", completed, pt.total)
+			if pt.failed > 0 {
+				statusMsg += fmt.Sprintf(" | 失败: %d", pt.failed)
+			}
+			pt.overallTracker.UpdateMessage(fmt.Sprintf("%-40s", statusMsg))
+		}
+	}
+}
+
+// MarkTrackerDone 标记 tracker 为完成
+func (pt *ProgressTracker) MarkTrackerDone(host string) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+
+	// 标记主机为已完成
+	if _, exists := pt.allHosts[host]; exists && !pt.allHosts[host] {
+		pt.allHosts[host] = true
+		pt.completed++
+	}
+
+	if pt.showIndividual {
+		tracker, exists := pt.trackers[host]
+		if exists {
+			tracker.MarkAsDone()
+		}
+	} else {
+		// 更新总体 tracker
+		if pt.overallTracker != nil {
+			pt.overallTracker.SetValue(int64(pt.completed))
+			statusMsg := fmt.Sprintf("已完成: %d/%d", pt.completed, pt.total)
+			if pt.failed > 0 {
+				statusMsg += fmt.Sprintf(" | 失败: %d", pt.failed)
+			}
+			pt.overallTracker.UpdateMessage(fmt.Sprintf("%-40s", statusMsg))
+		}
+	}
+}
+
+// MarkTrackerErrored 标记 tracker 为错误
+func (pt *ProgressTracker) MarkTrackerErrored(host string, reason string) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+
+	// 标记主机为已完成（失败也算完成）
+	if _, exists := pt.allHosts[host]; exists && !pt.allHosts[host] {
+		pt.allHosts[host] = true
+		pt.completed++
+		pt.failed++
+	}
+
+	if pt.showIndividual {
+		tracker, exists := pt.trackers[host]
+		if exists {
+			tracker.UpdateMessage(fmt.Sprintf("%-40s", fmt.Sprintf("%s (失败)", host)))
+			tracker.MarkAsErrored()
+		}
+	} else {
+		// 更新总体 tracker
+		if pt.overallTracker != nil {
+			pt.overallTracker.SetValue(int64(pt.completed))
+			statusMsg := fmt.Sprintf("已完成: %d/%d | 失败: %d", pt.completed, pt.total, pt.failed)
+			pt.overallTracker.UpdateMessage(fmt.Sprintf("%-40s", statusMsg))
+		}
+	}
+}
+
+// Stop 停止进度跟踪器
 func (pt *ProgressTracker) Stop() {
 	pt.mu.Lock()
-	if pt.tracker != nil && pt.completed < pt.total {
-		pt.tracker.SetValue(pt.total)
+
+	// 检查未完成的主机并标记为超时
+	timeoutCount := 0
+	for host, completed := range pt.allHosts {
+		if !completed {
+			timeoutCount++
+			pt.allHosts[host] = true // 标记为已完成（超时）
+			pt.completed++
+			pt.failed++
+
+			if pt.showIndividual {
+				tracker, exists := pt.trackers[host]
+				if exists {
+					tracker.UpdateMessage(fmt.Sprintf("%-40s", fmt.Sprintf("%s (超时)", host)))
+					tracker.MarkAsErrored()
+				}
+			}
+		}
 	}
+
+	// 确保总体 tracker 显示最终状态
+	if !pt.showIndividual && pt.overallTracker != nil {
+		pt.overallTracker.SetValue(int64(pt.total))
+		statusMsg := fmt.Sprintf("已完成: %d/%d", pt.completed, pt.total)
+		if pt.failed > 0 {
+			statusMsg += fmt.Sprintf(" | 失败: %d", pt.failed)
+		}
+		if timeoutCount > 0 {
+			statusMsg += fmt.Sprintf(" | 超时: %d", timeoutCount)
+		}
+		pt.overallTracker.UpdateMessage(fmt.Sprintf("%-40s", statusMsg))
+		pt.overallTracker.MarkAsDone()
+	}
+
 	pt.mu.Unlock()
 
 	pt.pw.Stop()
@@ -417,7 +570,7 @@ func (pt *ProgressTracker) Stop() {
 }
 
 // PrintPingConfig 打印 ping 命令的配置参数
-func PrintPingConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port string, concurrency int) {
+func PrintPingConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port string, concurrency int, timeout time.Duration) {
 	t := createConfigTable(false)
 	data := &ConfigData{
 		HostsFile:   hostsFile,
@@ -431,6 +584,14 @@ func PrintPingConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, pas
 		Concurrency: concurrency,
 	}
 	printCommonConfig(t, data)
+
+	// 显示超时时间
+	timeoutValue := timeout
+	if timeoutValue <= 0 {
+		timeoutValue = 30 * time.Second
+	}
+	t.AppendRow(table.Row{"连接超时", text.Colors{text.FgCyan}.Sprint(timeoutValue.String())})
+
 	renderConfigTable(t)
 }
 

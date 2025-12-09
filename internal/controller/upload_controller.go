@@ -122,17 +122,6 @@ func (c *UploadController) Execute(req *UploadCommandRequest) (*UploadCommandRes
 	// 创建进度跟踪器
 	progressTracker := view.NewProgressTracker(len(hosts), "上传文件")
 
-	// 创建进度回调函数
-	progressCallback := func(host string, stage string, value int64, isFailed bool) {
-		if value == 100 {
-			// 任务完成（成功或失败）
-			if isFailed {
-				progressTracker.AddFailedHost(host, stage)
-			}
-			progressTracker.Increment()
-		}
-	}
-
 	// 创建执行器
 	exec := executor.NewExecutor(hosts, mergedReq.User, mergedReq.KeyPath, mergedReq.Password, port)
 
@@ -145,7 +134,7 @@ func (c *UploadController) Execute(req *UploadCommandRequest) (*UploadCommandRes
 		mergedReq.RemotePath,
 		mode,
 		mergedReq.Concurrency,
-		progressCallback,
+		progressTracker,
 	)
 
 	// 记录结束时间并计算总耗时

@@ -116,17 +116,6 @@ func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandRes
 	// 创建进度跟踪器
 	progressTracker := view.NewProgressTracker(len(hosts), "执行脚本")
 
-	// 创建进度回调函数
-	progressCallback := func(host string, stage string, value int64, isFailed bool) {
-		if value == 100 {
-			// 任务完成（成功或失败）
-			if isFailed {
-				progressTracker.AddFailedHost(host, stage)
-			}
-			progressTracker.Increment()
-		}
-	}
-
 	// 创建执行器
 	exec := executor.NewExecutor(hosts, mergedReq.User, mergedReq.KeyPath, mergedReq.Password, port)
 
@@ -139,7 +128,7 @@ func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandRes
 		mergedReq.Concurrency,
 		mergedReq.Become,
 		mergedReq.BecomeUser,
-		progressCallback,
+		progressTracker,
 	)
 
 	// 记录结束时间并计算总耗时

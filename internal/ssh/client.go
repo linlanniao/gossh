@@ -14,13 +14,19 @@ import (
 
 // Client 封装 SSH 客户端
 type Client struct {
-	config *ssh.ClientConfig
-	host   string
-	port   string
+	config  *ssh.ClientConfig
+	host    string
+	port    string
+	timeout time.Duration // 连接超时时间
 }
 
 // NewClient 创建新的 SSH 客户端
 func NewClient(host, port, user, keyPath, password string) (*Client, error) {
+	return NewClientWithTimeout(host, port, user, keyPath, password, 10*time.Second)
+}
+
+// NewClientWithTimeout 创建新的 SSH 客户端，支持自定义超时时间
+func NewClientWithTimeout(host, port, user, keyPath, password string, timeout time.Duration) (*Client, error) {
 	var authMethod ssh.AuthMethod
 
 	// 优先使用 SSH key 认证
@@ -46,13 +52,14 @@ func NewClient(host, port, user, keyPath, password string) (*Client, error) {
 		User:            user,
 		Auth:            []ssh.AuthMethod{authMethod},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 生产环境应验证 host key
-		Timeout:         10 * time.Second,
+		Timeout:         timeout,
 	}
 
 	return &Client{
-		config: config,
-		host:   host,
-		port:   port,
+		config:  config,
+		host:    host,
+		port:    port,
+		timeout: timeout,
 	}, nil
 }
 
@@ -331,10 +338,49 @@ func (c *Client) createErrorResult(command string, startTime time.Time, err erro
 
 // Ping 测试 SSH 连接是否成功，返回连接延迟和错误信息
 func (c *Client) Ping() (*PingResult, error) {
+	return c.PingWithTimeout(c.timeout)
+}
+
+// PingWithTimeout 测试 SSH 连接是否成功，支持自定义超时时间
+func (c *Client) PingWithTimeout(timeout time.Duration) (*PingResult, error) {
 	startTime := time.Now()
 	address := fmt.Sprintf("%s:%s", c.host, c.port)
 
-	conn, err := ssh.Dial("tcp", address, c.config)
+	// 使用 context 强制超时
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// 创建一个 channel 来接收连接结果
+	type dialResult struct {
+		conn *ssh.Client
+		err  error
+	}
+	dialCh := make(chan dialResult, 1)
+
+	// 在 goroutine 中执行连接，以便可以被 context 取消
+	go func() {
+		conn, err := ssh.Dial("tcp", address, c.config)
+		select {
+		case dialCh <- dialResult{conn: conn, err: err}:
+			// 成功发送结果
+		case <-ctx.Done():
+			// 如果已经超时，关闭连接以避免资源泄漏
+			if conn != nil {
+				conn.Close()
+			}
+		}
+	}()
+
+	var conn *ssh.Client
+	var err error
+	select {
+	case result := <-dialCh:
+		conn = result.conn
+		err = result.err
+	case <-ctx.Done():
+		err = fmt.Errorf("连接超时（超过 %v）", timeout)
+	}
+
 	duration := time.Since(startTime)
 
 	if err != nil {
@@ -345,19 +391,61 @@ func (c *Client) Ping() (*PingResult, error) {
 			Error:    err,
 		}, err
 	}
-	defer conn.Close()
+
+	// 确保连接总是被关闭
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
 
 	// 尝试创建一个会话来验证连接完全可用
-	session, err := conn.NewSession()
-	if err != nil {
+	// 使用 context 控制会话创建的超时
+	sessionCh := make(chan *ssh.Session, 1)
+	sessionErrCh := make(chan error, 1)
+	go func() {
+		session, err := conn.NewSession()
+		if err != nil {
+			select {
+			case sessionErrCh <- err:
+			case <-ctx.Done():
+			}
+			return
+		}
+		select {
+		case sessionCh <- session:
+		case <-ctx.Done():
+			// 如果已经超时，关闭会话以避免资源泄漏
+			session.Close()
+		}
+	}()
+
+	var session *ssh.Session
+	select {
+	case session = <-sessionCh:
+		// 会话创建成功
+	case err := <-sessionErrCh:
 		return &PingResult{
 			Host:     c.host,
 			Success:  false,
 			Duration: duration,
 			Error:    fmt.Errorf("创建会话失败: %w", err),
 		}, err
+	case <-ctx.Done():
+		return &PingResult{
+			Host:     c.host,
+			Success:  false,
+			Duration: duration,
+			Error:    fmt.Errorf("创建会话超时（超过 %v）", timeout),
+		}, ctx.Err()
 	}
-	session.Close()
+
+	// 确保 session 总是被关闭，使用 defer 确保即使发生 panic 也能关闭
+	defer func() {
+		if session != nil {
+			session.Close()
+		}
+	}()
 
 	return &PingResult{
 		Host:     c.host,

@@ -3,6 +3,7 @@ package cmd
 import (
 	"gossh/internal/controller"
 	"gossh/internal/view"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,7 @@ var (
 	pingPassword    string
 	pingPort        string
 	pingConcurrency int
+	pingTimeout     time.Duration // 连接超时时间
 )
 
 // pingCmd represents the ping command
@@ -56,6 +58,7 @@ var pingCmd = &cobra.Command{
 			Password:    pingPassword,
 			Port:        pingPort,
 			Concurrency: pingConcurrency,
+			Timeout:     pingTimeout,
 		}
 
 		// 执行 ping 测试
@@ -88,4 +91,5 @@ func init() {
 
 	// 执行相关参数
 	pingCmd.Flags().IntVar(&pingConcurrency, "concurrency", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
+	pingCmd.Flags().DurationVar(&pingTimeout, "timeout", 0, "连接超时时间（默认: 30s，可从 ansible.cfg 的 timeout 读取），例如: 30s, 1m, 2m30s")
 }
