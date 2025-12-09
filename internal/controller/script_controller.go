@@ -2,7 +2,6 @@ package controller
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"gossh/internal/config"
@@ -11,16 +10,16 @@ import (
 	"gossh/internal/view"
 )
 
-// PingController 处理 ping 命令的业务逻辑
-type PingController struct{}
+// ScriptController 处理 script 命令的业务逻辑
+type ScriptController struct{}
 
-// NewPingController 创建新的 PingController
-func NewPingController() *PingController {
-	return &PingController{}
+// NewScriptController 创建新的 ScriptController
+func NewScriptController() *ScriptController {
+	return &ScriptController{}
 }
 
-// PingRequest ping 命令的请求参数
-type PingRequest struct {
+// ScriptCommandRequest script 命令的请求参数
+type ScriptCommandRequest struct {
 	HostsFile   string
 	HostsDir    string // Ansible hosts 目录路径
 	HostsString string
@@ -29,22 +28,26 @@ type PingRequest struct {
 	KeyPath     string
 	Password    string
 	Port        string
+	ScriptPath  string
+	Become      bool
+	BecomeUser  string
 	Concurrency int
+	ShowOutput  bool
 }
 
-// PingResponse ping 命令的响应
-type PingResponse struct {
-	Results       []*ssh.PingResult
-	TotalDuration time.Duration // 总执行时间（从开始到所有任务完成）
+// ScriptCommandResponse script 命令的响应
+type ScriptCommandResponse struct {
+	Results       []*ssh.Result
+	TotalDuration time.Duration
 }
 
-// Execute 执行 ping 命令
-func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
+// Execute 执行 script 命令
+func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandResponse, error) {
 	// 合并配置（优先级：命令行参数 > ansible.cfg > 默认值）
 	mergedReq := c.mergeConfig(req)
 
 	// 打印当前配置参数
-	view.PrintPingConfig(
+	view.PrintScriptConfig(
 		mergedReq.HostsFile,
 		mergedReq.HostsDir,
 		mergedReq.HostsString,
@@ -53,7 +56,11 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 		mergedReq.KeyPath,
 		mergedReq.Password,
 		mergedReq.Port,
+		mergedReq.ScriptPath,
+		mergedReq.Become,
+		mergedReq.BecomeUser,
 		mergedReq.Concurrency,
+		mergedReq.ShowOutput,
 	)
 
 	// 验证参数
@@ -74,7 +81,7 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 	}
 
 	// 创建进度跟踪器
-	progressTracker := view.NewProgressTracker(len(hosts), "SSH 连接测试")
+	progressTracker := view.NewProgressTracker(len(hosts), "执行脚本")
 
 	// 创建进度回调函数
 	progressCallback := func(host string, stage string, value int64, isFailed bool) {
@@ -87,15 +94,20 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 		}
 	}
 
+	// 创建执行器
+	exec := executor.NewExecutor(hosts, mergedReq.User, mergedReq.KeyPath, mergedReq.Password, port)
+
 	// 记录开始时间
 	startTime := time.Now()
 
-	// 执行 ping 测试
-	results, err := c.executePing(hosts, mergedReq.User, mergedReq.KeyPath, mergedReq.Password, port, mergedReq.Concurrency, progressCallback)
-	if err != nil {
-		progressTracker.Stop()
-		return nil, fmt.Errorf("执行失败: %w", err)
-	}
+	// 执行脚本
+	results, err := exec.ExecuteScriptWithBecome(
+		mergedReq.ScriptPath,
+		mergedReq.Concurrency,
+		mergedReq.Become,
+		mergedReq.BecomeUser,
+		progressCallback,
+	)
 
 	// 记录结束时间并计算总耗时
 	totalDuration := time.Since(startTime)
@@ -103,15 +115,19 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 	// 停止进度跟踪器
 	progressTracker.Stop()
 
-	return &PingResponse{
+	if err != nil {
+		return nil, fmt.Errorf("执行失败: %w", err)
+	}
+
+	return &ScriptCommandResponse{
 		Results:       results,
 		TotalDuration: totalDuration,
 	}, nil
 }
 
 // mergeConfig 合并配置（优先级：命令行参数 > ansible.cfg > 默认值）
-func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
-	merged := &PingRequest{
+func (c *ScriptController) mergeConfig(req *ScriptCommandRequest) *ScriptCommandRequest {
+	merged := &ScriptCommandRequest{
 		HostsFile:   req.HostsFile,
 		HostsDir:    req.HostsDir,
 		HostsString: req.HostsString,
@@ -120,7 +136,11 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 		KeyPath:     req.KeyPath,
 		Password:    req.Password,
 		Port:        req.Port,
+		ScriptPath:  req.ScriptPath,
+		Become:      req.Become,
+		BecomeUser:  req.BecomeUser,
 		Concurrency: req.Concurrency,
+		ShowOutput:  req.ShowOutput,
 	}
 
 	// 加载 ansible.cfg
@@ -134,6 +154,13 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 	}
 
 	// 合并配置（命令行参数优先）
+	if merged.HostsFile == "" && merged.HostsDir == "" && merged.HostsString == "" {
+		// 如果命令行没有指定主机来源，使用 ansible.cfg 的 inventory
+		merged.HostsDir = ""
+		merged.HostsFile = ""
+		merged.HostsString = ""
+	}
+
 	if merged.User == "" {
 		merged.User = ansibleCfg.RemoteUser
 	}
@@ -143,7 +170,6 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 	}
 
 	if merged.Port == "" || merged.Port == "22" {
-		// Port 在 ansible.cfg 中没有对应项，保持默认值
 		merged.Port = "22"
 	}
 
@@ -159,8 +185,10 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 }
 
 // validateRequest 验证请求参数
-func (c *PingController) validateRequest(req *PingRequest) error {
-	// 主机列表可以从命令行参数或 ansible.cfg 加载，所以这里不强制要求
+func (c *ScriptController) validateRequest(req *ScriptCommandRequest) error {
+	if req.ScriptPath == "" {
+		return fmt.Errorf("必须指定要执行的脚本文件路径（-s）")
+	}
 
 	if req.User == "" {
 		return fmt.Errorf("必须指定用户名（-u 或 ansible.cfg 中的 remote_user）")
@@ -170,7 +198,7 @@ func (c *PingController) validateRequest(req *PingRequest) error {
 }
 
 // loadHosts 加载主机列表
-func (c *PingController) loadHosts(req *PingRequest) ([]executor.Host, error) {
+func (c *ScriptController) loadHosts(req *ScriptCommandRequest) ([]executor.Host, error) {
 	var hosts []executor.Host
 	var err error
 
@@ -215,92 +243,4 @@ func (c *PingController) loadHosts(req *PingRequest) ([]executor.Host, error) {
 	}
 
 	return hosts, nil
-}
-
-// executePing 并发执行 ping 测试
-func (c *PingController) executePing(hosts []executor.Host, user, keyPath, password, defaultPort string, concurrency int, progressCallback func(string, string, int64, bool)) ([]*ssh.PingResult, error) {
-	if concurrency <= 0 {
-		concurrency = 5
-	}
-
-	results := make([]*ssh.PingResult, len(hosts))
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, concurrency)
-	var mu sync.Mutex
-
-	for i, host := range hosts {
-		wg.Add(1)
-		go func(idx int, h executor.Host) {
-			defer wg.Done()
-
-			hostAddr := h.Address
-
-			// 限制并发数
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			// 连接阶段不需要回调，避免输出过多
-
-			// 使用主机特定的配置，如果没有则使用默认配置
-			hostKeyPath := h.KeyPath
-			if hostKeyPath == "" {
-				hostKeyPath = keyPath
-			}
-			hostUser := h.User
-			if hostUser == "" {
-				hostUser = user
-			}
-			port := h.Port
-			if port == "" {
-				port = defaultPort
-			}
-
-			client, err := ssh.NewClient(h.Address, port, hostUser, hostKeyPath, password)
-			if err != nil {
-				mu.Lock()
-				results[idx] = &ssh.PingResult{
-					Host:     h.Address,
-					Success:  false,
-					Duration: 0,
-					Error:    fmt.Errorf("创建客户端失败: %v", err),
-				}
-				mu.Unlock()
-				if progressCallback != nil {
-					progressCallback(hostAddr, fmt.Sprintf("连接失败: %v", err), 100, true)
-				}
-				return
-			}
-
-			result, err := client.Ping()
-			if err != nil {
-				mu.Lock()
-				results[idx] = &ssh.PingResult{
-					Host:     h.Address,
-					Success:  false,
-					Duration: 0,
-					Error:    err,
-				}
-				mu.Unlock()
-				if progressCallback != nil {
-					progressCallback(hostAddr, fmt.Sprintf("测试失败: %v", err), 100, true)
-				}
-				return
-			}
-
-			mu.Lock()
-			results[idx] = result
-			mu.Unlock()
-
-			if progressCallback != nil {
-				if result.Success {
-					progressCallback(hostAddr, "成功", 100, false)
-				} else {
-					progressCallback(hostAddr, "失败", 100, true)
-				}
-			}
-		}(i, host)
-	}
-
-	wg.Wait()
-	return results, nil
 }

@@ -17,7 +17,8 @@ var (
 	password    string
 	port        string
 	command     string
-	scriptPath  string
+	become      bool
+	becomeUser  string
 	concurrency int
 	showOutput  bool
 )
@@ -25,8 +26,8 @@ var (
 // runCmd represents the run command
 var runCmd = &cobra.Command{
 	Use:   "run",
-	Short: "批量执行命令或脚本",
-	Long: `批量 SSH 连接到多台服务器并执行命令或脚本。
+	Short: "批量执行命令",
+	Long: `批量 SSH 连接到多台服务器并执行命令。
 
 示例:
   # 使用 -g 指定组名，只对指定分组的主机执行命令
@@ -42,8 +43,9 @@ var runCmd = &cobra.Command{
   # 从命令行参数指定主机执行命令
   gossh run -H "192.168.1.10,192.168.1.11" -u root -c "df -h"
 
-  # 执行脚本文件
-  gossh run -f hosts.txt -u root -s deploy.sh
+  # 使用 become 模式（sudo）执行命令
+  gossh run -f hosts.txt -u root -c "systemctl restart nginx" --become
+  gossh run -f hosts.txt -u root -c "whoami" --become --become-user appuser
 
   # 指定并发数
   gossh run -f hosts.txt -u root -c "ls -la" --concurrency 10`,
@@ -62,7 +64,8 @@ var runCmd = &cobra.Command{
 			Password:    password,
 			Port:        port,
 			Command:     command,
-			ScriptPath:  scriptPath,
+			Become:      become,
+			BecomeUser:  becomeUser,
 			Concurrency: concurrency,
 			ShowOutput:  showOutput,
 		}
@@ -74,7 +77,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// 输出结果
-		view.PrintRunResults(resp.Results, showOutput)
+		view.PrintRunResults(resp.Results, resp.TotalDuration, showOutput)
 
 		return nil
 	},
@@ -96,8 +99,10 @@ func init() {
 	runCmd.Flags().StringVarP(&port, "port", "P", "22", "SSH 端口（默认: 22）")
 
 	// 执行相关参数
-	runCmd.Flags().StringVarP(&command, "command", "c", "", "要执行的命令")
-	runCmd.Flags().StringVarP(&scriptPath, "script", "s", "", "要执行的脚本文件路径")
+	runCmd.Flags().StringVarP(&command, "command", "c", "", "要执行的命令（必需）")
+	runCmd.MarkFlagRequired("command")
+	runCmd.Flags().BoolVar(&become, "become", false, "使用 sudo 执行命令（类似 ansible 的 become）")
+	runCmd.Flags().StringVar(&becomeUser, "become-user", "", "使用 sudo 切换到指定用户执行命令（默认: root）")
 	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
 	runCmd.Flags().BoolVar(&showOutput, "show-output", true, "显示命令输出（默认: true）")
 }

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"time"
 
 	"gossh/internal/config"
 	"gossh/internal/executor"
@@ -28,14 +29,16 @@ type RunCommandRequest struct {
 	Password    string
 	Port        string
 	Command     string
-	ScriptPath  string
+	Become      bool
+	BecomeUser  string
 	Concurrency int
 	ShowOutput  bool
 }
 
 // RunCommandResponse run 命令的响应
 type RunCommandResponse struct {
-	Results []*ssh.Result
+	Results       []*ssh.Result
+	TotalDuration time.Duration // 总执行时间（从开始到所有任务完成）
 }
 
 // Execute 执行 run 命令
@@ -54,7 +57,8 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 		mergedReq.Password,
 		mergedReq.Port,
 		mergedReq.Command,
-		mergedReq.ScriptPath,
+		mergedReq.Become,
+		mergedReq.BecomeUser,
 		mergedReq.Concurrency,
 		mergedReq.ShowOutput,
 	)
@@ -77,11 +81,7 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 	}
 
 	// 创建进度跟踪器
-	title := "执行命令"
-	if mergedReq.ScriptPath != "" {
-		title = "执行脚本"
-	}
-	progressTracker := view.NewProgressTracker(len(hosts), title)
+	progressTracker := view.NewProgressTracker(len(hosts), "执行命令")
 
 	// 创建进度回调函数
 	progressCallback := func(host string, stage string, value int64, isFailed bool) {
@@ -97,13 +97,21 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 	// 创建执行器
 	exec := executor.NewExecutor(hosts, mergedReq.User, mergedReq.KeyPath, mergedReq.Password, port)
 
-	// 执行命令或脚本
+	// 记录开始时间
+	startTime := time.Now()
+
+	// 执行命令
 	var results []*ssh.Result
-	if mergedReq.Command != "" {
-		results, err = exec.ExecuteCommand(mergedReq.Command, mergedReq.Concurrency, progressCallback)
-	} else {
-		results, err = exec.ExecuteScript(mergedReq.ScriptPath, mergedReq.Concurrency, progressCallback)
-	}
+	results, err = exec.ExecuteCommandWithBecome(
+		mergedReq.Command,
+		mergedReq.Concurrency,
+		mergedReq.Become,
+		mergedReq.BecomeUser,
+		progressCallback,
+	)
+
+	// 记录结束时间并计算总耗时
+	totalDuration := time.Since(startTime)
 
 	// 停止进度跟踪器
 	progressTracker.Stop()
@@ -113,7 +121,8 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 	}
 
 	return &RunCommandResponse{
-		Results: results,
+		Results:       results,
+		TotalDuration: totalDuration,
 	}, nil
 }
 
@@ -129,7 +138,8 @@ func (c *RunController) mergeConfig(req *RunCommandRequest) *RunCommandRequest {
 		Password:    req.Password,
 		Port:        req.Port,
 		Command:     req.Command,
-		ScriptPath:  req.ScriptPath,
+		Become:      req.Become,
+		BecomeUser:  req.BecomeUser,
 		Concurrency: req.Concurrency,
 		ShowOutput:  req.ShowOutput,
 	}
@@ -178,14 +188,8 @@ func (c *RunController) mergeConfig(req *RunCommandRequest) *RunCommandRequest {
 
 // validateRequest 验证请求参数
 func (c *RunController) validateRequest(req *RunCommandRequest) error {
-	// 主机列表可以从命令行参数或 ansible.cfg 加载，所以这里不强制要求
-
-	if req.Command == "" && req.ScriptPath == "" {
-		return fmt.Errorf("必须指定要执行的命令（-c）或脚本（-s）")
-	}
-
-	if req.Command != "" && req.ScriptPath != "" {
-		return fmt.Errorf("不能同时指定命令和脚本")
+	if req.Command == "" {
+		return fmt.Errorf("必须指定要执行的命令（-c）")
 	}
 
 	if req.User == "" {

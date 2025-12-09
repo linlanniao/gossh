@@ -56,6 +56,11 @@ func NewClient(host, port, user, keyPath, password string) (*Client, error) {
 
 // Execute 执行命令并返回结果
 func (c *Client) Execute(command string) (*Result, error) {
+	return c.ExecuteWithBecome(command, false, "")
+}
+
+// ExecuteWithBecome 执行命令并返回结果，支持 become 模式（类似 sudo）
+func (c *Client) ExecuteWithBecome(command string, become bool, becomeUser string) (*Result, error) {
 	startTime := time.Now()
 	address := fmt.Sprintf("%s:%s", c.host, c.port)
 	conn, err := ssh.Dial("tcp", address, c.config)
@@ -81,8 +86,18 @@ func (c *Client) Execute(command string) (*Result, error) {
 		return nil, fmt.Errorf("获取标准错误失败: %w", err)
 	}
 
+	// 如果启用 become 模式，使用 sudo 执行命令
+	finalCommand := command
+	if become {
+		if becomeUser != "" && becomeUser != "root" {
+			finalCommand = fmt.Sprintf("sudo -u %s %s", becomeUser, command)
+		} else {
+			finalCommand = fmt.Sprintf("sudo %s", command)
+		}
+	}
+
 	// 执行命令
-	if err := session.Start(command); err != nil {
+	if err := session.Start(finalCommand); err != nil {
 		return nil, fmt.Errorf("启动命令失败: %w", err)
 	}
 
@@ -112,25 +127,216 @@ func (c *Client) Execute(command string) (*Result, error) {
 	}, nil
 }
 
-// ExecuteScript 执行脚本文件
+// ExecuteScript 执行脚本文件（先上传到临时目录再执行）
 func (c *Client) ExecuteScript(scriptPath string) (*Result, error) {
+	return c.ExecuteScriptWithBecome(scriptPath, false, "")
+}
+
+// ExecuteScriptWithBecome 执行脚本文件（先上传到临时目录再执行），支持 become 模式
+func (c *Client) ExecuteScriptWithBecome(scriptPath string, become bool, becomeUser string) (*Result, error) {
+	startTime := time.Now()
+
+	// 读取脚本内容
 	scriptContent, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return nil, fmt.Errorf("读取脚本文件失败: %w", err)
 	}
 
-	// 将脚本内容作为命令执行
-	return c.Execute(string(scriptContent))
+	// 生成唯一的临时文件名（使用时间戳和随机数）
+	tempFileName := fmt.Sprintf("/tmp/gossh_script_%d_%d.sh", time.Now().UnixNano(), os.Getpid())
+
+	// 上传脚本文件到远程主机
+	address := fmt.Sprintf("%s:%s", c.host, c.port)
+	conn, err := ssh.Dial("tcp", address, c.config)
+	if err != nil {
+		return nil, fmt.Errorf("连接失败: %w", err)
+	}
+	defer conn.Close()
+
+	// 使用 SCP 上传文件
+	err = c.uploadFile(conn, scriptContent, tempFileName, "0755")
+	if err != nil {
+		return &Result{
+			Host:     c.host,
+			Command:  scriptPath,
+			Stdout:   "",
+			Stderr:   fmt.Sprintf("上传脚本失败: %v", err),
+			ExitCode: -1,
+			Duration: time.Since(startTime),
+			Error:    err,
+		}, err
+	}
+
+	// 执行脚本
+	executeCommand := fmt.Sprintf("bash %s", tempFileName)
+	result, err := c.ExecuteWithBecome(executeCommand, become, becomeUser)
+	if err != nil {
+		// 即使执行失败，也尝试清理临时文件
+		c.cleanupTempFile(conn, tempFileName)
+		return result, err
+	}
+
+	// 清理临时文件
+	cleanupResult := c.cleanupTempFile(conn, tempFileName)
+	if cleanupResult != nil && result.ExitCode == 0 {
+		// 如果清理失败但原命令成功，在 stderr 中记录
+		result.Stderr += fmt.Sprintf("\n警告: 清理临时文件失败: %v", cleanupResult)
+	}
+
+	return result, nil
+}
+
+// cleanupTempFile 清理临时文件
+func (c *Client) cleanupTempFile(conn *ssh.Client, filePath string) error {
+	session, err := conn.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	// 执行删除命令，忽略错误
+	_ = session.Run(fmt.Sprintf("rm -f %s", filePath))
+	return nil
+}
+
+// UploadFile 上传文件到远程主机
+func (c *Client) UploadFile(localPath string, remotePath string, mode string) (*Result, error) {
+	startTime := time.Now()
+
+	// 读取本地文件内容
+	fileContent, err := os.ReadFile(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取本地文件失败: %w", err)
+	}
+
+	address := fmt.Sprintf("%s:%s", c.host, c.port)
+	conn, err := ssh.Dial("tcp", address, c.config)
+	if err != nil {
+		return nil, fmt.Errorf("连接失败: %w", err)
+	}
+	defer conn.Close()
+
+	// 使用 SCP 上传文件
+	err = c.uploadFile(conn, fileContent, remotePath, mode)
+	if err != nil {
+		return &Result{
+			Host:     c.host,
+			Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
+			Stdout:   "",
+			Stderr:   fmt.Sprintf("上传文件失败: %v", err),
+			ExitCode: -1,
+			Duration: time.Since(startTime),
+			Error:    err,
+		}, err
+	}
+
+	return &Result{
+		Host:     c.host,
+		Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
+		Stdout:   fmt.Sprintf("文件已成功上传到 %s", remotePath),
+		Stderr:   "",
+		ExitCode: 0,
+		Duration: time.Since(startTime),
+		Error:    nil,
+	}, nil
+}
+
+// uploadFile 使用 SCP 协议上传文件内容
+func (c *Client) uploadFile(conn *ssh.Client, content []byte, remotePath string, mode string) error {
+	session, err := conn.NewSession()
+	if err != nil {
+		return fmt.Errorf("创建会话失败: %w", err)
+	}
+	defer session.Close()
+
+	// 创建 stdin pipe
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("创建 stdin pipe 失败: %w", err)
+	}
+
+	// 从 remotePath 提取目录和文件名
+	remoteDir := filepath.Dir(remotePath)
+	fileName := filepath.Base(remotePath)
+	if fileName == "" || fileName == "." {
+		fileName = "file"
+	}
+
+	// 设置默认权限
+	if mode == "" {
+		mode = "0644"
+	}
+
+	// 启动 SCP 命令
+	// scp -t 表示接收模式（to），-d 表示目标目录
+	scpCommand := fmt.Sprintf("scp -t -d %s", remoteDir)
+	if err := session.Start(scpCommand); err != nil {
+		return fmt.Errorf("启动 SCP 命令失败: %w", err)
+	}
+
+	// 读取确认字符（从 stderr 读取，SCP 协议使用 stderr）
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		session.Wait()
+		return fmt.Errorf("获取 stderr pipe 失败: %w", err)
+	}
+
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			if _, err := stderr.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	// 发送文件元数据
+	// 格式: C<mode> <size> <filename>\n
+	_, err = fmt.Fprintf(stdin, "C%s %d %s\n", mode, len(content), fileName)
+	if err != nil {
+		stdin.Close()
+		session.Wait()
+		return fmt.Errorf("发送文件元数据失败: %w", err)
+	}
+
+	// 发送文件内容
+	_, err = stdin.Write(content)
+	if err != nil {
+		stdin.Close()
+		session.Wait()
+		return fmt.Errorf("发送文件内容失败: %w", err)
+	}
+
+	// 发送结束标记
+	_, err = fmt.Fprint(stdin, "\x00")
+	if err != nil {
+		stdin.Close()
+		session.Wait()
+		return fmt.Errorf("发送结束标记失败: %w", err)
+	}
+
+	stdin.Close()
+
+	// 等待命令完成
+	err = session.Wait()
+	if err != nil {
+		if exitError, ok := err.(*ssh.ExitError); ok {
+			return fmt.Errorf("SCP 命令执行失败，退出码: %d", exitError.ExitStatus())
+		}
+		return fmt.Errorf("SCP 命令执行失败: %w", err)
+	}
+
+	return nil
 }
 
 // Ping 测试 SSH 连接是否成功，返回连接延迟和错误信息
 func (c *Client) Ping() (*PingResult, error) {
 	startTime := time.Now()
 	address := fmt.Sprintf("%s:%s", c.host, c.port)
-	
+
 	conn, err := ssh.Dial("tcp", address, c.config)
 	duration := time.Since(startTime)
-	
+
 	if err != nil {
 		return &PingResult{
 			Host:     c.host,
@@ -195,4 +401,3 @@ func loadPrivateKey(keyPath string) (ssh.Signer, error) {
 
 	return signer, nil
 }
-

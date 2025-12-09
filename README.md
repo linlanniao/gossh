@@ -8,6 +8,8 @@ gossh 是一个类似 ansible 的批量 SSH 连接工具，支持批量连接到
 - ✅ 并发执行，提高效率
 - ✅ 支持从文件或命令行参数读取主机列表
 - ✅ 支持执行命令和脚本文件
+- ✅ 支持 Become 模式（类似 ansible 的 sudo 执行）
+- ✅ 支持批量上传文件
 - ✅ 支持连接测试（ping 功能）
 - ✅ 详细的执行结果输出
 - ✅ 可配置并发数量
@@ -55,20 +57,68 @@ GoReleaser 会自动为 Linux 和 macOS 平台构建二进制文件，并生成�
 
 ## 使用方法
 
-### run 命令 - 批量执行命令或脚本
+### run 命令 - 批量执行命令
 
 ```bash
 # 从文件读取主机列表执行命令
 gossh run -f hosts.txt -u root -k ~/.ssh/id_rsa -c "uptime"
 
+# 使用 Ansible hosts 文件格式，指定分组
+gossh run -d ansible_hosts -g test -u root -c "df -h"
+gossh run -f hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -c "uptime"
+
 # 从命令行参数指定主机执行命令
 gossh run -H "192.168.1.10,192.168.1.11" -u root -c "df -h"
 
-# 执行脚本文件
-gossh run -f hosts.txt -u root -s deploy.sh
+# 使用 become 模式（sudo）执行命令
+gossh run -f hosts.txt -u root -c "systemctl restart nginx" --become
+gossh run -f hosts.txt -u root -c "whoami" --become --become-user appuser
 
 # 指定并发数
 gossh run -f hosts.txt -u root -c "ls -la" --concurrency 10
+```
+
+### script 命令 - 批量执行脚本文件
+
+脚本会先上传到远程主机的临时目录，执行完成后自动清理。
+
+```bash
+# 从文件读取主机列表执行脚本
+gossh script -f hosts.txt -u root -k ~/.ssh/id_rsa -s deploy.sh
+
+# 使用 Ansible hosts 文件格式，指定分组
+gossh script -d ansible_hosts -g test -u root -s deploy.sh
+gossh script -f hosts.ini -g web_servers -u root -s deploy.sh
+
+# 从命令行参数指定主机执行脚本
+gossh script -H "192.168.1.10,192.168.1.11" -u root -s deploy.sh
+
+# 使用 become 模式执行脚本
+gossh script -f hosts.txt -u root -s deploy.sh --become
+gossh script -f hosts.txt -u root -s deploy.sh --become --become-user appuser
+
+# 指定并发数
+gossh script -f hosts.txt -u root -s deploy.sh --concurrency 10
+```
+
+### upload 命令 - 批量上传文件
+
+```bash
+# 从文件读取主机列表上传文件
+gossh upload -f hosts.txt -u root -k ~/.ssh/id_rsa -l app.tar.gz -r /tmp/app.tar.gz
+
+# 使用 Ansible hosts 文件格式，指定分组
+gossh upload -d ansible_hosts -g test -u root -l app.tar.gz -r /tmp/app.tar.gz
+gossh upload -f hosts.ini -g web_servers -u root -l config.conf -r /etc/config.conf
+
+# 从命令行参数指定主机上传文件
+gossh upload -H "192.168.1.10,192.168.1.11" -u root -l config.conf -r /etc/config.conf
+
+# 指定文件权限
+gossh upload -f hosts.txt -u root -l script.sh -r /tmp/script.sh --mode 0755
+
+# 指定并发数
+gossh upload -f hosts.txt -u root -l app.tar.gz -r /tmp/app.tar.gz --concurrency 10
 ```
 
 ### ping 命令 - 测试 SSH 连接
@@ -105,8 +155,10 @@ gossh v
 ### 参数说明
 
 #### 主机列表相关
-- `-f, --file`: 主机列表文件路径
+- `-f, --file`: 主机列表文件路径（支持普通格式和 Ansible INI 格式）
+- `-d, --dir`: Ansible hosts 目录路径（读取目录下所有 .ini 文件并聚合）
 - `-H, --hosts`: 主机列表（逗号分隔），例如: `192.168.1.10,192.168.1.11`
+- `-g, --group`: Ansible INI 格式的分组名称（仅在使用 -f 或 -d 参数时有效），例如: `-g test` 或 `-g web_servers`
 
 #### 认证相关
 - `-u, --user`: SSH 用户名（必需）
@@ -114,13 +166,30 @@ gossh v
 - `-p, --password`: SSH 密码（如果未提供 key）
 - `-P, --port`: SSH 端口（默认: 22）
 
-#### 执行相关
-- `-c, --command`: 要执行的命令
-- `-s, --script`: 要执行的脚本文件路径
+#### 执行相关（run 命令）
+- `-c, --command`: 要执行的命令（必需）
+- `--become`: 使用 sudo 执行命令（类似 ansible 的 become）
+- `--become-user`: 使用 sudo 切换到指定用户执行命令（默认: root）
+- `--concurrency`: 并发执行数量（默认: 5）
+- `--show-output`: 显示命令输出（默认: true）
+
+#### 执行相关（script 命令）
+- `-s, --script`: 要执行的脚本文件路径（必需）
+- `--become`: 使用 sudo 执行脚本
+- `--become-user`: 使用 sudo 切换到指定用户执行脚本（默认: root）
+- `--concurrency`: 并发执行数量（默认: 5）
+- `--show-output`: 显示命令输出（默认: true）
+
+#### 上传相关（upload 命令）
+- `-l, --local`: 本地文件路径（必需）
+- `-r, --remote`: 远程文件路径（必需）
+- `--mode`: 文件权限（默认: 0644）
 - `--concurrency`: 并发执行数量（默认: 5）
 - `--show-output`: 显示命令输出（默认: true）
 
 ### 主机列表文件格式
+
+#### 普通格式
 
 主机列表文件支持以下格式：
 
@@ -138,6 +207,30 @@ admin@192.168.1.13:2222   # 指定用户和端口
 - 如果不指定用户，使用 `-u` 参数指定的用户
 - 如果不指定端口，使用 `-P` 参数指定的端口（默认 22）
 
+#### Ansible INI 格式
+
+支持 Ansible 的 INI 格式主机文件，可以使用分组：
+
+```ini
+[web_servers]
+192.168.1.10
+192.168.1.11:2222
+root@192.168.1.12
+
+[db_servers]
+192.168.1.20
+192.168.1.21
+
+[all:children]
+web_servers
+db_servers
+```
+
+使用方式：
+- `-f hosts.ini -g web_servers`: 只对 web_servers 分组的主机执行
+- `-d ansible_hosts`: 读取目录下所有 .ini 文件并聚合所有主机
+- `-d ansible_hosts -g web_servers`: 从目录中读取，但只对指定分组执行
+
 ## 示例
 
 ### 示例 1: 检查所有服务器的磁盘使用情况
@@ -149,7 +242,27 @@ gossh run -f hosts.txt -u root -k ~/.ssh/id_rsa -c "df -h"
 ### 示例 2: 批量执行部署脚本
 
 ```bash
-gossh run -f hosts.txt -u deploy -k ~/.ssh/deploy_key -s deploy.sh --concurrency 10
+gossh script -f hosts.txt -u deploy -k ~/.ssh/deploy_key -s deploy.sh --concurrency 10
+```
+
+### 示例 2.1: 使用 become 模式执行需要权限的命令
+
+```bash
+# 使用 sudo 执行需要 root 权限的命令
+gossh run -f hosts.txt -u deploy -c "systemctl restart nginx" --become
+
+# 切换到指定用户执行命令
+gossh run -f hosts.txt -u deploy -c "whoami" --become --become-user appuser
+```
+
+### 示例 2.2: 批量上传文件
+
+```bash
+# 上传文件到远程主机
+gossh upload -f hosts.txt -u root -l app.tar.gz -r /tmp/app.tar.gz
+
+# 上传脚本文件并设置执行权限
+gossh upload -f hosts.txt -u root -l deploy.sh -r /tmp/deploy.sh --mode 0755
 ```
 
 ### 示例 3: 快速检查服务器状态
@@ -226,6 +339,8 @@ SSH 连接测试结果
 2. **SSH Key**: 如果未指定 key 路径，工具会尝试使用 `~/.ssh/id_rsa`
 3. **并发控制**: 默认并发数为 5，可以根据网络和服务器性能调整
 4. **错误处理**: 连接失败或执行失败的主机会在结果中标记，不会中断其他主机的执行
+5. **脚本执行**: `script` 命令会将脚本上传到远程主机的 `/tmp/gossh_script_*.sh` 临时文件，执行完成后自动清理
+6. **Become 模式**: 使用 `--become` 参数时，确保 SSH 用户有 sudo 权限且配置了无密码 sudo（或使用 `-p` 提供密码）
 
 ## 开发
 
