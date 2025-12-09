@@ -63,3 +63,4 @@ Thumbs.db
 # Goreleaser
 .goreleaser.yml.local
 
+testdata/

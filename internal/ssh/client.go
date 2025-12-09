@@ -223,6 +223,20 @@ func (c *Client) UploadFile(localPath string, remotePath string, mode string) (*
 	}
 	defer localFile.Close()
 
+	// 确保文件指针在开头
+	_, err = localFile.Seek(0, 0)
+	if err != nil {
+		return &Result{
+			Host:     c.host,
+			Command:  fmt.Sprintf("upload %s -> %s", localPath, remotePath),
+			Stdout:   "",
+			Stderr:   fmt.Sprintf("重置文件指针失败: %v", err),
+			ExitCode: -1,
+			Duration: time.Since(startTime),
+			Error:    err,
+		}, fmt.Errorf("重置文件指针失败: %w", err)
+	}
+
 	// 建立 SSH 连接
 	address := fmt.Sprintf("%s:%s", c.host, c.port)
 	conn, err := ssh.Dial("tcp", address, c.config)
@@ -259,8 +273,9 @@ func (c *Client) UploadFile(localPath string, remotePath string, mode string) (*
 		mode = "0644"
 	}
 
-	// 使用 go-scp 上传文件
-	ctx := context.Background()
+	// 使用 go-scp 上传文件，设置超时避免无限等待
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	err = scpClient.CopyFromFile(ctx, *localFile, remotePath, mode)
 	if err != nil {
 		return &Result{
