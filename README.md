@@ -120,6 +120,12 @@ gossh script -i hosts.txt -g all -u root -s deploy.sh --limit 5
 
 # 跳过前 3 台主机，然后执行接下来的 5 台
 gossh script -i hosts.txt -g all -u root -s deploy.sh --offset 3 --limit 5
+
+# 使用指定的执行器执行脚本（默认: bash）
+gossh script -i hosts.txt -g all -u root -s deploy.sh --executor bash
+gossh script -i hosts.txt -g all -u root -s deploy.sh --executor sh
+gossh script -i hosts.txt -g all -u root -s deploy.py --executor python
+gossh script -i hosts.txt -g all -u root -s deploy.py --executor python3
 ```
 
 ### upload 命令 - 批量上传文件
@@ -255,6 +261,7 @@ gossh list-group -i ansible_hosts --one-line
 #### script 命令专用参数
 
 - `-s, --script`: 要执行的脚本文件路径（必需）
+- `--executor`: 脚本执行器（默认: bash，可选: sh, python, python3 等）。例如: `--executor bash` 或 `--executor python`
 - `--become`: 使用 sudo 执行脚本（类似 ansible 的 become）
 - `--become-user`: 使用 sudo 切换到指定用户执行脚本（默认: root）
 - `--show-output`: 显示命令输出（默认: true）
@@ -344,7 +351,11 @@ gossh run -i hosts.txt -g all -u root -k ~/.ssh/id_rsa -c "df -h"
 ### 示例 2: 批量执行部署脚本
 
 ```bash
+# 使用默认的 bash 执行器执行脚本
 gossh script -i hosts.txt -g all -u deploy -k ~/.ssh/deploy_key -s deploy.sh -f 10
+
+# 使用 python 执行器执行 Python 脚本
+gossh script -i hosts.txt -g all -u deploy -k ~/.ssh/deploy_key -s deploy.py --executor python -f 10
 ```
 
 ### 示例 2.1: 使用 become 模式执行需要权限的命令
@@ -474,7 +485,7 @@ SSH 连接测试结果
 2. **SSH Key**: 如果未指定 key 路径，工具会尝试使用 `~/.ssh/id_rsa`
 3. **并发控制**: 默认并发数为 5，可以根据网络和服务器性能调整
 4. **错误处理**: 连接失败或执行失败的主机会在结果中标记，不会中断其他主机的执行
-5. **脚本执行**: `script` 命令会将脚本上传到远程主机的 `/tmp/gossh_script_*.sh` 临时文件，执行完成后自动清理
+5. **脚本执行**: `script` 命令会将脚本上传到远程主机的 `/tmp/gossh_script_*.sh` 临时文件，然后使用指定的执行器（默认: bash）执行，执行完成后自动清理临时文件
 6. **Become 模式**: 使用 `--become` 参数时，确保 SSH 用户有 sudo 权限且配置了无密码 sudo（或使用 `-p` 提供密码）
 7. **主机排序**: 主机列表会按照 `Address:Port` 自动排序，确保每次执行时顺序一致。这使得 `--limit` 和 `--offset` 参数能够稳定工作，相同的参数值总是操作相同的主机
 

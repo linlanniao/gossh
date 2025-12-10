@@ -171,15 +171,20 @@ func (c *Client) waitForCommand(session *ssh.Session) int {
 
 // ExecuteScript 执行脚本文件（先上传到临时目录再执行）
 func (c *Client) ExecuteScript(scriptPath string) (*Result, error) {
-	return c.ExecuteScriptWithBecome(scriptPath, false, "")
+	return c.ExecuteScriptWithBecome(scriptPath, false, "", "bash")
 }
 
 // ExecuteScriptWithBecome 执行脚本文件（先上传到临时目录再执行），支持 become 模式
-func (c *Client) ExecuteScriptWithBecome(scriptPath string, become bool, becomeUser string) (*Result, error) {
+func (c *Client) ExecuteScriptWithBecome(scriptPath string, become bool, becomeUser string, executor string) (*Result, error) {
 	startTime := time.Now()
 
+	// 设置默认执行器
+	if executor == "" {
+		executor = "bash"
+	}
+
 	// 生成唯一的临时文件名（使用时间戳和随机数）
-	tempFileName := fmt.Sprintf("/tmp/gossh_script_%d_%d.sh", time.Now().UnixNano(), os.Getpid())
+	tempFileName := fmt.Sprintf("/tmp/gossh_script_%d_%d", time.Now().UnixNano(), os.Getpid())
 
 	// 使用 UploadFile 方法上传脚本文件（临时文件总是强制覆盖）
 	_, err := c.UploadFile(scriptPath, tempFileName, "0755", false, true)
@@ -205,8 +210,8 @@ func (c *Client) ExecuteScriptWithBecome(scriptPath string, become bool, becomeU
 		defer conn.Close()
 	}
 
-	// 执行脚本
-	executeCommand := fmt.Sprintf("bash %s", tempFileName)
+	// 执行脚本，使用指定的执行器
+	executeCommand := fmt.Sprintf("%s %s", executor, tempFileName)
 	result, err := c.ExecuteWithBecome(executeCommand, become, becomeUser)
 	if err != nil {
 		// 即使执行失败，也尝试清理临时文件

@@ -80,13 +80,17 @@ func (e *Executor) ExecuteCommandWithBecome(command string, concurrency int, bec
 
 // ExecuteScript 并发执行脚本（先上传到临时目录再执行）
 func (e *Executor) ExecuteScript(scriptPath string, concurrency int, progressTracker ProgressTracker) ([]*ssh.Result, error) {
-	return e.ExecuteScriptWithBecome(scriptPath, concurrency, false, "", progressTracker)
+	return e.ExecuteScriptWithBecome(scriptPath, concurrency, false, "", "bash", progressTracker)
 }
 
 // ExecuteScriptWithBecome 并发执行脚本（先上传到临时目录再执行），支持 become 模式
-func (e *Executor) ExecuteScriptWithBecome(scriptPath string, concurrency int, become bool, becomeUser string, progressTracker ProgressTracker) ([]*ssh.Result, error) {
+func (e *Executor) ExecuteScriptWithBecome(scriptPath string, concurrency int, become bool, becomeUser string, executor string, progressTracker ProgressTracker) ([]*ssh.Result, error) {
+	// 设置默认执行器
+	if executor == "" {
+		executor = "bash"
+	}
 	task := func(client *ssh.Client, h Host) (*ssh.Result, error) {
-		return client.ExecuteScriptWithBecome(scriptPath, become, becomeUser)
+		return client.ExecuteScriptWithBecome(scriptPath, become, becomeUser, executor)
 	}
 	return e.executeConcurrent(task, scriptPath, concurrency, progressTracker)
 }

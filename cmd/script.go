@@ -15,6 +15,7 @@ var (
 	scriptLogDir     string
 	scriptLimit      int
 	scriptOffset     int
+	scriptExecutor   string
 )
 
 // scriptCmd represents the script command
@@ -49,7 +50,13 @@ var scriptCmd = &cobra.Command{
   gossh script -i hosts.txt -g all -u root -s deploy.sh --limit 5
 
   # 跳过前 3 台主机，然后执行接下来的 5 台
-  gossh script -i hosts.txt -g all -u root -s deploy.sh --offset 3 --limit 5`,
+  gossh script -i hosts.txt -g all -u root -s deploy.sh --offset 3 --limit 5
+
+  # 使用指定的执行器执行脚本（默认: bash）
+  gossh script -i hosts.txt -g all -u root -s deploy.sh --executor bash
+  gossh script -i hosts.txt -g all -u root -s deploy.sh --executor sh
+  gossh script -i hosts.txt -g all -u root -s deploy.py --executor python
+  gossh script -i hosts.txt -g all -u root -s deploy.py --executor python3`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewScriptController()
@@ -71,6 +78,7 @@ var scriptCmd = &cobra.Command{
 			LogDir:      scriptLogDir,
 			Limit:       scriptLimit,
 			Offset:      scriptOffset,
+			Executor:    scriptExecutor,
 		}
 
 		// 执行命令
@@ -98,4 +106,5 @@ func init() {
 	scriptCmd.Flags().StringVar(&scriptLogDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：script-时间戳.log")
 	scriptCmd.Flags().IntVar(&scriptLimit, "limit", 0, "限制执行的主机数量（0 表示不限制）")
 	scriptCmd.Flags().IntVar(&scriptOffset, "offset", 0, "跳过前 N 台主机（默认: 0）")
+	scriptCmd.Flags().StringVar(&scriptExecutor, "executor", "bash", "脚本执行器（默认: bash，可选: sh, python, python3 等）")
 }

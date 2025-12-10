@@ -35,6 +35,7 @@ type ScriptCommandRequest struct {
 	LogDir      string
 	Limit       int
 	Offset      int
+	Executor    string // 脚本执行器（默认: bash）
 }
 
 // ScriptCommandResponse script 命令的响应
@@ -130,6 +131,7 @@ func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandRes
 		mergedReq.Concurrency,
 		mergedReq.Become,
 		mergedReq.BecomeUser,
+		mergedReq.Executor,
 		progressTracker,
 	)
 
@@ -188,6 +190,12 @@ func (c *ScriptController) mergeConfig(req *ScriptCommandRequest) *ScriptCommand
 		Concurrency: req.Concurrency,
 	})
 
+	// 设置默认执行器
+	executor := req.Executor
+	if executor == "" {
+		executor = "bash"
+	}
+
 	return &ScriptCommandRequest{
 		ConfigFile:  req.ConfigFile,
 		Inventory:   commonCfg.Inventory,
@@ -204,6 +212,7 @@ func (c *ScriptController) mergeConfig(req *ScriptCommandRequest) *ScriptCommand
 		LogDir:      req.LogDir,
 		Limit:       req.Limit,
 		Offset:      req.Offset,
+		Executor:    executor,
 	}
 }
 
