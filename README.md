@@ -2,6 +2,26 @@
 
 gossh 是一个类似 ansible 的批量 SSH 连接工具，支持批量连接到多台 Linux 服务器执行命令或脚本。
 
+## 项目背景与意义
+
+在生产环境中，当需要管理大规模服务器集群时，传统的 Ansible 工具往往会遇到性能瓶颈。以管理超过 3000 台服务器为例：
+
+### Ansible 的性能问题
+
+- **资源消耗高**：在 4 核 8G 的 Ansible 控制机上，管理 3000 台机器时单核 CPU 占用率高达 100%
+- **并发能力弱**：即使设置 50 并发数，4 核 CPU 也会完全占满
+- **执行速度慢**：执行简单的 `ansible -m ping` 命令，3000 台机器需要将近 **15 分钟**
+
+### gossh 的解决方案
+
+gossh 专注于解决大规模服务器管理的性能问题：
+
+- **提取核心功能**：将 Ansible 最常用的功能（ping、shell、文件上传等）独立实现，去除不必要的开销
+- **兼容 Ansible 配置**：尽量兼容 `ansible.cfg`，无需修改现有 Ansible 配置即可覆盖常用功能
+- **显著性能提升**：经过实践验证，简单的 ping 命令从 **15 分钟减少到 1 分钟**，性能提升约 **15 倍**
+
+gossh 特别适合需要频繁执行批量操作的大规模生产环境，在保持与 Ansible 相似的使用体验的同时，大幅提升执行效率。
+
 ## 主要特性
 
 - ✅ 支持 SSH key 认证和密码认证
@@ -37,23 +57,6 @@ curl -fsSL https://raw.githubusercontent.com/linlanniao/gossh/main/install.sh | 
 ### 从 GitHub Releases 手动下载
 
 访问 [GitHub Releases](https://github.com/linlanniao/gossh/releases) 下载对应平台的预编译二进制文件，解压后手动复制到系统 PATH 目录。
-
-### 使用 GoReleaser 构建
-
-项目使用 [GoReleaser](https://goreleaser.com) 进行自动化构建和发布：
-
-```bash
-# 安装 GoReleaser
-go install github.com/goreleaser/goreleaser@latest
-
-# 本地测试构建（不发布）
-goreleaser build --snapshot
-
-# 发布新版本（需要设置 GITHUB_TOKEN）
-goreleaser release
-```
-
-GoReleaser 会自动为 Linux 和 macOS 平台构建二进制文件，并生成相应的压缩包。
 
 ## 使用方法
 
@@ -134,24 +137,6 @@ gossh ping -H "192.168.1.10,192.168.1.11" -u root
 gossh ping -f hosts.txt -u root --concurrency 10
 ```
 
-### version 命令 - 查看版本信息
-
-```bash
-# 查看版本信息
-gossh version
-
-# 或使用简写
-gossh v
-```
-
-版本信息包括：
-- 版本号
-- Git 提交哈希
-- 分支名
-- 构建用户
-- 构建日期
-- Go 版本和平台信息
-
 ### 参数说明
 
 #### 主机列表相关
@@ -220,11 +205,9 @@ root@192.168.1.12
 [db_servers]
 192.168.1.20
 192.168.1.21
-
-[all:children]
-web_servers
-db_servers
 ```
+
+**注意**：目前不支持 Ansible 的 `[group:children]` 子分组格式，仅支持直接定义主机列表的分组。
 
 使用方式：
 - `-f hosts.ini -g web_servers`: 只对 web_servers 分组的主机执行
@@ -353,21 +336,7 @@ go build -o gossh .
 
 # 安装到系统
 go install .
-
-# 使用 GoReleaser 本地构建（测试）
-goreleaser build --snapshot
 ```
-
-### 版本信息
-
-版本信息通过构建时的 ldflags 注入到二进制文件中，包括：
-- `Version`: Git 标签版本
-- `Revision`: Git 完整提交哈希
-- `Branch`: Git 分支名
-- `BuildUser`: 构建用户
-- `BuildDate`: 构建日期
-
-这些信息可以通过 `gossh version` 命令查看。
 
 ## 许可证
 
