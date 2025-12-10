@@ -375,6 +375,10 @@ func NewProgressTracker(total int, title string) *ProgressTracker {
 	pw.Style().Options.TimeInProgressPrecision = time.Millisecond * 100
 	pw.Style().Options.TimeDonePrecision = time.Millisecond * 100
 	pw.Style().Options.TimeOverallPrecision = time.Millisecond * 100
+	// 隐藏自动添加的状态文本和分隔符，只保留中文状态提示
+	pw.Style().Options.DoneString = ""
+	pw.Style().Options.ErrorString = ""
+	pw.Style().Options.Separator = ""
 
 	progressTracker := &ProgressTracker{
 		pw:             pw,
@@ -483,6 +487,9 @@ func (pt *ProgressTracker) MarkTrackerDone(host string) {
 	if pt.showIndividual {
 		tracker, exists := pt.trackers[host]
 		if exists {
+			// 更新消息为带颜色的成功状态
+			successMsg := text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("%s (成功)", host))
+			tracker.UpdateMessage(fmt.Sprintf("%-40s", successMsg))
 			tracker.MarkAsDone()
 		}
 	} else {
@@ -513,7 +520,9 @@ func (pt *ProgressTracker) MarkTrackerErrored(host string, reason string) {
 	if pt.showIndividual {
 		tracker, exists := pt.trackers[host]
 		if exists {
-			tracker.UpdateMessage(fmt.Sprintf("%-40s", fmt.Sprintf("%s (失败)", host)))
+			// 更新消息为带颜色的失败状态
+			failMsg := text.Colors{text.FgRed}.Sprint(fmt.Sprintf("%s (失败)", host))
+			tracker.UpdateMessage(fmt.Sprintf("%-40s", failMsg))
 			tracker.MarkAsErrored()
 		}
 	} else {
@@ -542,7 +551,9 @@ func (pt *ProgressTracker) Stop() {
 			if pt.showIndividual {
 				tracker, exists := pt.trackers[host]
 				if exists {
-					tracker.UpdateMessage(fmt.Sprintf("%-40s", fmt.Sprintf("%s (超时)", host)))
+					// 更新消息为带颜色的超时状态
+					timeoutMsg := text.Colors{text.FgRed}.Sprint(fmt.Sprintf("%s (超时)", host))
+					tracker.UpdateMessage(fmt.Sprintf("%-40s", timeoutMsg))
 					tracker.MarkAsErrored()
 				}
 			}

@@ -8,18 +8,11 @@ import (
 )
 
 var (
-	inventory   string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
-	group       string // Ansible INI 格式的分组名称
-	user        string
-	keyPath     string
-	password    string
-	port        string
-	command     string
-	become      bool
-	becomeUser  string
-	concurrency int
-	showOutput  bool
-	logDir      string
+	command    string
+	become     bool
+	becomeUser string
+	showOutput bool
+	logDir     string
 )
 
 // runCmd represents the run command
@@ -33,21 +26,21 @@ var runCmd = &cobra.Command{
   gossh run -i ansible_hosts -g test -u root -c "df -h"
   gossh run -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -c "uptime"
 
-  # 从文件读取主机列表执行命令
-  gossh run -i hosts.txt -u root -k ~/.ssh/id_rsa -c "uptime"
+  # 使用 -g all 选择所有分组的主机
+  gossh run -i hosts.txt -g all -u root -k ~/.ssh/id_rsa -c "uptime"
 
-  # 从目录读取所有 Ansible hosts 文件并聚合
-  gossh run -i ansible_hosts -u root -k ~/.ssh/id_rsa -c "uptime"
+  # 从目录读取所有 Ansible hosts 文件并聚合，选择所有分组
+  gossh run -i ansible_hosts -g all -u root -k ~/.ssh/id_rsa -c "uptime"
 
-  # 从命令行参数指定主机执行命令（逗号分隔）
-  gossh run -i "192.168.1.10,192.168.1.11" -u root -c "df -h"
+  # 从命令行参数指定主机执行命令（逗号分隔，也需要指定 -g）
+  gossh run -i "192.168.1.10,192.168.1.11" -g all -u root -c "df -h"
 
   # 使用 become 模式（sudo）执行命令
-  gossh run -i hosts.txt -u root -c "systemctl restart nginx" --become
-  gossh run -i hosts.txt -u root -c "whoami" --become --become-user appuser
+  gossh run -i hosts.txt -g all -u root -c "systemctl restart nginx" --become
+  gossh run -i hosts.txt -g all -u root -c "whoami" --become --become-user appuser
 
   # 指定并发数
-  gossh run -i hosts.txt -u root -c "ls -la" --concurrency 10`,
+  gossh run -i hosts.txt -g all -u root -c "ls -la" -f 10`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewRunController()
@@ -64,7 +57,7 @@ var runCmd = &cobra.Command{
 			Command:     command,
 			Become:      become,
 			BecomeUser:  becomeUser,
-			Concurrency: concurrency,
+			Concurrency: forks,
 			ShowOutput:  showOutput,
 			LogDir:      logDir,
 		}
@@ -85,22 +78,11 @@ var runCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(runCmd)
 
-	// 主机列表相关参数
-	runCmd.Flags().StringVarP(&inventory, "inventory", "i", "", "主机列表（文件路径、目录路径或逗号分隔的主机列表）。如果指定目录，会递归读取目录下所有子文件并聚合，例如: -i hosts.ini 或 -i hosts_dir/ 或 -i 192.168.1.10,192.168.1.11")
-	runCmd.Flags().StringVarP(&group, "group", "g", "", "Ansible INI 格式的分组名称（仅在使用 -i 参数指定文件或目录时有效），例如: -g test 或 -g web_servers")
-
-	// 认证相关参数
-	runCmd.Flags().StringVarP(&user, "user", "u", "", "SSH 用户名（可从 ansible.cfg 的 remote_user 读取）")
-	runCmd.Flags().StringVarP(&keyPath, "key", "k", "", "SSH 私钥路径（优先使用，可从 ansible.cfg 的 private_key_file 读取）")
-	runCmd.Flags().StringVarP(&password, "password", "p", "", "SSH 密码（如果未提供 key）")
-	runCmd.Flags().StringVarP(&port, "port", "P", "22", "SSH 端口（默认: 22）")
-
 	// 执行相关参数
 	runCmd.Flags().StringVarP(&command, "command", "c", "", "要执行的命令（必需）")
 	runCmd.MarkFlagRequired("command")
 	runCmd.Flags().BoolVar(&become, "become", false, "使用 sudo 执行命令（类似 ansible 的 become）")
 	runCmd.Flags().StringVar(&becomeUser, "become-user", "", "使用 sudo 切换到指定用户执行命令（默认: root）")
-	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
 	runCmd.Flags().BoolVar(&showOutput, "show-output", true, "显示命令输出（默认: true）")
 	runCmd.Flags().StringVar(&logDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：run-时间戳.log")
 }

@@ -28,13 +28,19 @@ func LoadHostsFromFile(filePath string) ([]executor.Host, error) {
 }
 
 // LoadHostsFromFileWithGroup 从文件加载主机列表，支持指定分组
-// group 为空字符串时加载所有分组的主机
+// group 为空字符串或 "all" 时加载所有分组的主机
 func LoadHostsFromFileWithGroup(filePath, group string) ([]executor.Host, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("打开文件失败: %w", err)
 	}
 	defer file.Close()
+
+	// 处理 "all" 保留字：转换为空字符串以加载所有分组
+	targetGroup := group
+	if group == "all" {
+		targetGroup = ""
+	}
 
 	// 检测是否是 INI 格式（检查是否有 [section] 格式）
 	isINI, err := detectINIFormat(file)
@@ -46,7 +52,7 @@ func LoadHostsFromFileWithGroup(filePath, group string) ([]executor.Host, error)
 	file.Seek(0, 0)
 
 	if isINI {
-		return loadHostsFromINI(file, group)
+		return loadHostsFromINI(file, targetGroup)
 	}
 
 	// 普通格式

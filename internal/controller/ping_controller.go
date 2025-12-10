@@ -250,7 +250,7 @@ func (c *PingController) executePing(hosts []executor.Host, user, keyPath, passw
 			mu.Unlock()
 
 			if result.Success {
-				progressTracker.UpdateTracker(hostAddr, 100, fmt.Sprintf("%s (成功)", hostAddr))
+				progressTracker.UpdateTracker(hostAddr, 100, hostAddr)
 				progressTracker.MarkTrackerDone(hostAddr)
 			} else {
 				progressTracker.MarkTrackerErrored(hostAddr, "连接失败")

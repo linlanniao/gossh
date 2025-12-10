@@ -279,7 +279,7 @@ func (e *Executor) handleTaskSuccess(
 
 	if progressTracker != nil {
 		if result.ExitCode == 0 {
-			progressTracker.UpdateTracker(result.Host, 100, fmt.Sprintf("%s (成功)", result.Host))
+			progressTracker.UpdateTracker(result.Host, 100, result.Host)
 			progressTracker.MarkTrackerDone(result.Host)
 		} else {
 			progressTracker.MarkTrackerErrored(result.Host, fmt.Sprintf("失败(退出码:%d)", result.ExitCode))

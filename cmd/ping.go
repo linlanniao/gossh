@@ -3,21 +3,11 @@ package cmd
 import (
 	"gossh/internal/controller"
 	"gossh/internal/view"
-	"time"
 
 	"github.com/spf13/cobra"
 )
 
-var (
-	pingInventory   string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
-	pingGroup       string // Ansible INI 格式的分组名称
-	pingUser        string
-	pingKeyPath     string
-	pingPassword    string
-	pingPort        string
-	pingConcurrency int
-	pingTimeout     time.Duration // 连接超时时间
-)
+// ping 命令没有额外的局部变量，全部使用全局变量
 
 // pingCmd represents the ping command
 var pingCmd = &cobra.Command{
@@ -30,17 +20,17 @@ var pingCmd = &cobra.Command{
   gossh ping -i ansible_hosts -g test -u root
   gossh ping -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa
 
-  # 从文件读取主机列表测试连接
-  gossh ping -i hosts.txt -u root -k ~/.ssh/id_rsa
+  # 使用 -g all 测试所有分组的主机
+  gossh ping -i hosts.txt -g all -u root -k ~/.ssh/id_rsa
 
   # 从目录读取所有 Ansible hosts 文件并聚合测试
-  gossh ping -i ansible_hosts -u root -k ~/.ssh/id_rsa
+  gossh ping -i ansible_hosts -g all -u root -k ~/.ssh/id_rsa
 
-  # 从命令行参数指定主机测试连接（逗号分隔）
-  gossh ping -i "192.168.1.10,192.168.1.11" -u root
+  # 从命令行参数指定主机测试连接（逗号分隔，也需要指定 -g）
+  gossh ping -i "192.168.1.10,192.168.1.11" -g all -u root
 
   # 指定并发数
-  gossh ping -i hosts.txt -u root --concurrency 10`,
+  gossh ping -i hosts.txt -g all -u root -f 10`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewPingController()
@@ -48,14 +38,14 @@ var pingCmd = &cobra.Command{
 		// 构建请求
 		req := &controller.PingRequest{
 			ConfigFile:  configFile,
-			Inventory:   pingInventory,
-			Group:       pingGroup,
-			User:        pingUser,
-			KeyPath:     pingKeyPath,
-			Password:    pingPassword,
-			Port:        pingPort,
-			Concurrency: pingConcurrency,
-			Timeout:     pingTimeout,
+			Inventory:   inventory,
+			Group:       group,
+			User:        user,
+			KeyPath:     keyPath,
+			Password:    password,
+			Port:        port,
+			Concurrency: forks,
+			Timeout:     timeout,
 		}
 
 		// 执行 ping 测试
@@ -73,18 +63,5 @@ var pingCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(pingCmd)
-
-	// 主机列表相关参数
-	pingCmd.Flags().StringVarP(&pingInventory, "inventory", "i", "", "主机列表（文件路径、目录路径或逗号分隔的主机列表）。如果指定目录，会递归读取目录下所有子文件并聚合，例如: -i hosts.ini 或 -i hosts_dir/ 或 -i 192.168.1.10,192.168.1.11")
-	pingCmd.Flags().StringVarP(&pingGroup, "group", "g", "", "Ansible INI 格式的分组名称（仅在使用 -i 参数指定文件或目录时有效），例如: -g test 或 -g web_servers")
-
-	// 认证相关参数
-	pingCmd.Flags().StringVarP(&pingUser, "user", "u", "", "SSH 用户名（可从 ansible.cfg 的 remote_user 读取）")
-	pingCmd.Flags().StringVarP(&pingKeyPath, "key", "k", "", "SSH 私钥路径（优先使用，可从 ansible.cfg 的 private_key_file 读取）")
-	pingCmd.Flags().StringVarP(&pingPassword, "password", "p", "", "SSH 密码（如果未提供 key）")
-	pingCmd.Flags().StringVarP(&pingPort, "port", "P", "22", "SSH 端口（默认: 22）")
-
-	// 执行相关参数
-	pingCmd.Flags().IntVar(&pingConcurrency, "concurrency", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
-	pingCmd.Flags().DurationVar(&pingTimeout, "timeout", 0, "连接超时时间（默认: 30s，可从 ansible.cfg 的 timeout 读取），例如: 30s, 1m, 2m30s")
+	// ping 命令使用全局参数，无需额外定义
 }
