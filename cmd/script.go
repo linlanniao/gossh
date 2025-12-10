@@ -13,6 +13,8 @@ var (
 	scriptBecomeUser string
 	scriptShowOutput bool
 	scriptLogDir     string
+	scriptLimit      int
+	scriptOffset     int
 )
 
 // scriptCmd represents the script command
@@ -41,7 +43,13 @@ var scriptCmd = &cobra.Command{
   gossh script -i hosts.txt -g all -u root -s deploy.sh --become --become-user appuser
 
   # 指定并发数
-  gossh script -i hosts.txt -g all -u root -s deploy.sh -f 10`,
+  gossh script -i hosts.txt -g all -u root -s deploy.sh -f 10
+
+  # 限制执行的主机数量（只执行前 5 台主机）
+  gossh script -i hosts.txt -g all -u root -s deploy.sh --limit 5
+
+  # 跳过前 3 台主机，然后执行接下来的 5 台
+  gossh script -i hosts.txt -g all -u root -s deploy.sh --offset 3 --limit 5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewScriptController()
@@ -61,6 +69,8 @@ var scriptCmd = &cobra.Command{
 			Concurrency: forks,
 			ShowOutput:  scriptShowOutput,
 			LogDir:      scriptLogDir,
+			Limit:       scriptLimit,
+			Offset:      scriptOffset,
 		}
 
 		// 执行命令
@@ -86,4 +96,6 @@ func init() {
 	scriptCmd.Flags().StringVar(&scriptBecomeUser, "become-user", "", "使用 sudo 切换到指定用户执行脚本（默认: root）")
 	scriptCmd.Flags().BoolVar(&scriptShowOutput, "show-output", true, "显示命令输出（默认: true）")
 	scriptCmd.Flags().StringVar(&scriptLogDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：script-时间戳.log")
+	scriptCmd.Flags().IntVar(&scriptLimit, "limit", 0, "限制执行的主机数量（0 表示不限制）")
+	scriptCmd.Flags().IntVar(&scriptOffset, "offset", 0, "跳过前 N 台主机（默认: 0）")
 }

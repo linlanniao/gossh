@@ -82,6 +82,12 @@ gossh run -i hosts.txt -g all -u root -c "whoami" --become --become-user appuser
 
 # 指定并发数
 gossh run -i hosts.txt -g all -u root -c "ls -la" -f 10
+
+# 限制执行的主机数量（只执行前 5 台主机）
+gossh run -i hosts.txt -g all -u root -c "uptime" --limit 5
+
+# 跳过前 3 台主机，然后执行接下来的 5 台
+gossh run -i hosts.txt -g all -u root -c "df -h" --offset 3 --limit 5
 ```
 
 ### script 命令 - 批量执行脚本文件
@@ -108,6 +114,12 @@ gossh script -i hosts.txt -g all -u root -s deploy.sh --become --become-user app
 
 # 指定并发数
 gossh script -i hosts.txt -g all -u root -s deploy.sh -f 10
+
+# 限制执行的主机数量（只执行前 5 台主机）
+gossh script -i hosts.txt -g all -u root -s deploy.sh --limit 5
+
+# 跳过前 3 台主机，然后执行接下来的 5 台
+gossh script -i hosts.txt -g all -u root -s deploy.sh --offset 3 --limit 5
 ```
 
 ### upload 命令 - 批量上传文件
@@ -131,6 +143,12 @@ gossh upload -i hosts.txt -g all -u root -l script.sh -r /tmp/script.sh --mode 0
 
 # 指定并发数
 gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz -f 10
+
+# 限制执行的主机数量（只执行前 5 台主机）
+gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --limit 5
+
+# 跳过前 3 台主机，然后执行接下来的 5 台
+gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --offset 3 --limit 5
 ```
 
 ### ping 命令 - 测试 SSH 连接
@@ -222,6 +240,8 @@ gossh list-group -i ansible_hosts --one-line
 - `--become-user`: 使用 sudo 切换到指定用户执行命令（默认: root）
 - `--show-output`: 显示命令输出（默认: true）
 - `--log-dir`: 日志目录路径（可选，JSON 格式）。会自动生成文件名：run-时间戳.log
+- `--limit`: 限制执行的主机数量（0 表示不限制）。主机列表会按照 Address:Port 排序，确保每次执行顺序一致
+- `--offset`: 跳过前 N 台主机（默认: 0）。与 `--limit` 配合使用可以实现分页执行
 
 #### script 命令专用参数
 
@@ -230,6 +250,8 @@ gossh list-group -i ansible_hosts --one-line
 - `--become-user`: 使用 sudo 切换到指定用户执行脚本（默认: root）
 - `--show-output`: 显示命令输出（默认: true）
 - `--log-dir`: 日志目录路径（可选，JSON 格式）。会自动生成文件名：script-时间戳.log
+- `--limit`: 限制执行的主机数量（0 表示不限制）。主机列表会按照 Address:Port 排序，确保每次执行顺序一致
+- `--offset`: 跳过前 N 台主机（默认: 0）。与 `--limit` 配合使用可以实现分页执行
 
 #### upload 命令专用参数
 
@@ -238,6 +260,8 @@ gossh list-group -i ansible_hosts --one-line
 - `--mode`: 文件权限（默认: 0644）
 - `--show-output`: 显示命令输出（默认: true）
 - `--log-dir`: 日志目录路径（可选，JSON 格式）。会自动生成文件名：upload-时间戳.log
+- `--limit`: 限制执行的主机数量（0 表示不限制）。主机列表会按照 Address:Port 排序，确保每次执行顺序一致
+- `--offset`: 跳过前 N 台主机（默认: 0）。与 `--limit` 配合使用可以实现分页执行
 
 #### list-host 命令专用参数
 
@@ -362,6 +386,19 @@ gossh list-host -i hosts.txt -g all --one-line
 gossh list-group -i hosts.txt --one-line
 ```
 
+### 示例 7: 使用 limit 和 offset 分页执行
+
+```bash
+# 只对前 10 台主机执行命令（主机列表会按 Address:Port 排序）
+gossh run -i hosts.txt -g all -u root -c "uptime" --limit 10
+
+# 跳过前 10 台主机，然后对接下来 10 台执行命令（实现分页）
+gossh run -i hosts.txt -g all -u root -c "df -h" --offset 10 --limit 10
+
+# 批量上传文件到前 5 台主机
+gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --limit 5
+```
+
 ## 输出格式
 
 ### run 命令输出
@@ -416,6 +453,7 @@ SSH 连接测试结果
 4. **错误处理**: 连接失败或执行失败的主机会在结果中标记，不会中断其他主机的执行
 5. **脚本执行**: `script` 命令会将脚本上传到远程主机的 `/tmp/gossh_script_*.sh` 临时文件，执行完成后自动清理
 6. **Become 模式**: 使用 `--become` 参数时，确保 SSH 用户有 sudo 权限且配置了无密码 sudo（或使用 `-p` 提供密码）
+7. **主机排序**: 主机列表会按照 `Address:Port` 自动排序，确保每次执行时顺序一致。这使得 `--limit` 和 `--offset` 参数能够稳定工作，相同的参数值总是操作相同的主机
 
 ## 开发
 

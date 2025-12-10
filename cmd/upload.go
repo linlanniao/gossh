@@ -13,6 +13,8 @@ var (
 	uploadMode       string
 	uploadShowOutput bool
 	uploadLogDir     string
+	uploadLimit      int
+	uploadOffset     int
 )
 
 // uploadCmd represents the upload command
@@ -39,7 +41,13 @@ var uploadCmd = &cobra.Command{
   gossh upload -i hosts.txt -g all -u root -l script.sh -r /tmp/script.sh --mode 0755
 
   # 指定并发数
-  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz -f 10`,
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz -f 10
+
+  # 限制执行的主机数量（只执行前 5 台主机）
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --limit 5
+
+  # 跳过前 3 台主机，然后执行接下来的 5 台
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --offset 3 --limit 5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewUploadController()
@@ -59,6 +67,8 @@ var uploadCmd = &cobra.Command{
 			Concurrency: forks,
 			ShowOutput:  uploadShowOutput,
 			LogDir:      uploadLogDir,
+			Limit:       uploadLimit,
+			Offset:      uploadOffset,
 		}
 
 		// 执行命令
@@ -85,4 +95,6 @@ func init() {
 	uploadCmd.Flags().StringVar(&uploadMode, "mode", "0644", "文件权限（默认: 0644）")
 	uploadCmd.Flags().BoolVar(&uploadShowOutput, "show-output", true, "显示命令输出（默认: true）")
 	uploadCmd.Flags().StringVar(&uploadLogDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：upload-时间戳.log")
+	uploadCmd.Flags().IntVar(&uploadLimit, "limit", 0, "限制执行的主机数量（0 表示不限制）")
+	uploadCmd.Flags().IntVar(&uploadOffset, "offset", 0, "跳过前 N 台主机（默认: 0）")
 }

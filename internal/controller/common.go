@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"gossh/internal/config"
 	"gossh/internal/executor"
@@ -66,21 +67,31 @@ func MergeCommonConfig(cfg *CommonConfig) *CommonConfig {
 
 // LoadHosts 加载主机列表（公共方法）
 // 优先级：命令行参数 > ansible.cfg inventory > 错误
+// 返回的主机列表会按照 Address:Port 排序，确保每次执行顺序一致
 func LoadHosts(cfg *CommonConfig, requireHosts bool) ([]executor.Host, error) {
+	var hosts []executor.Host
+	var err error
+
 	// 如果未指定主机来源，尝试从 ansible.cfg 加载
 	if cfg.Inventory == "" {
-		return loadHostsFromAnsibleConfig(cfg.ConfigFile, cfg.Group, requireHosts)
-	}
-
-	// 从命令行参数加载主机列表
-	hosts, err := loadHostsFromConfig(cfg)
-	if err != nil {
-		return nil, err
+		hosts, err = loadHostsFromAnsibleConfig(cfg.ConfigFile, cfg.Group, requireHosts)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// 从命令行参数加载主机列表
+		hosts, err = loadHostsFromConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if len(hosts) == 0 {
 		return nil, fmt.Errorf("主机列表为空")
 	}
+
+	// 对主机列表进行排序，确保每次执行顺序一致
+	sortHosts(hosts)
 
 	return hosts, nil
 }
@@ -138,4 +149,17 @@ func loadHostsFromConfig(cfg *CommonConfig) ([]executor.Host, error) {
 		return nil, fmt.Errorf("无效的主机列表格式: %s（必须是文件路径、目录路径或IP地址/逗号分隔的主机列表）", cfg.Inventory)
 	}
 	return hosts, nil
+}
+
+// sortHosts 对主机列表进行排序，按照 Address:Port 排序
+// 确保每次执行时主机顺序一致，这样 limit 和 offset 才能稳定工作
+func sortHosts(hosts []executor.Host) {
+	sort.Slice(hosts, func(i, j int) bool {
+		// 先按 Address 排序
+		if hosts[i].Address != hosts[j].Address {
+			return hosts[i].Address < hosts[j].Address
+		}
+		// Address 相同则按 Port 排序
+		return hosts[i].Port < hosts[j].Port
+	})
 }

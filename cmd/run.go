@@ -13,6 +13,8 @@ var (
 	becomeUser string
 	showOutput bool
 	logDir     string
+	limit      int
+	offset     int
 )
 
 // runCmd represents the run command
@@ -40,7 +42,13 @@ var runCmd = &cobra.Command{
   gossh run -i hosts.txt -g all -u root -c "whoami" --become --become-user appuser
 
   # 指定并发数
-  gossh run -i hosts.txt -g all -u root -c "ls -la" -f 10`,
+  gossh run -i hosts.txt -g all -u root -c "ls -la" -f 10
+
+  # 限制执行的主机数量（只执行前 5 台主机）
+  gossh run -i hosts.txt -g all -u root -c "uptime" --limit 5
+
+  # 跳过前 3 台主机，然后执行接下来的 5 台
+  gossh run -i hosts.txt -g all -u root -c "df -h" --offset 3 --limit 5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewRunController()
@@ -60,6 +68,8 @@ var runCmd = &cobra.Command{
 			Concurrency: forks,
 			ShowOutput:  showOutput,
 			LogDir:      logDir,
+			Limit:       limit,
+			Offset:      offset,
 		}
 
 		// 执行命令
@@ -85,4 +95,6 @@ func init() {
 	runCmd.Flags().StringVar(&becomeUser, "become-user", "", "使用 sudo 切换到指定用户执行命令（默认: root）")
 	runCmd.Flags().BoolVar(&showOutput, "show-output", true, "显示命令输出（默认: true）")
 	runCmd.Flags().StringVar(&logDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：run-时间戳.log")
+	runCmd.Flags().IntVar(&limit, "limit", 0, "限制执行的主机数量（0 表示不限制）")
+	runCmd.Flags().IntVar(&offset, "offset", 0, "跳过前 N 台主机（默认: 0）")
 }

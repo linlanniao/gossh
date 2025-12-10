@@ -33,6 +33,8 @@ type UploadCommandRequest struct {
 	Concurrency int
 	ShowOutput  bool
 	LogDir      string
+	Limit       int
+	Offset      int
 }
 
 // UploadCommandResponse upload 命令的响应
@@ -96,6 +98,9 @@ func (c *UploadController) Execute(req *UploadCommandRequest) (*UploadCommandRes
 		log.LogError("加载主机列表失败", err)
 		return nil, err
 	}
+
+	// 应用 offset 和 limit
+	hosts = c.applyLimitAndOffset(hosts, mergedReq.Offset, mergedReq.Limit)
 
 	// 记录主机列表
 	hostAddresses := make([]string, len(hosts))
@@ -203,6 +208,8 @@ func (c *UploadController) mergeConfig(req *UploadCommandRequest) *UploadCommand
 		Concurrency: commonCfg.Concurrency,
 		ShowOutput:  req.ShowOutput,
 		LogDir:      req.LogDir,
+		Limit:       req.Limit,
+		Offset:      req.Offset,
 	}
 }
 
@@ -230,4 +237,27 @@ func (c *UploadController) loadHosts(req *UploadCommandRequest) ([]executor.Host
 		Inventory:  req.Inventory,
 		Group:      req.Group,
 	}, true)
+}
+
+// applyLimitAndOffset 应用 limit 和 offset 来过滤主机列表
+func (c *UploadController) applyLimitAndOffset(hosts []executor.Host, offset, limit int) []executor.Host {
+	total := len(hosts)
+	if total == 0 {
+		return hosts
+	}
+
+	// 应用 offset
+	if offset > 0 {
+		if offset >= total {
+			return []executor.Host{}
+		}
+		hosts = hosts[offset:]
+	}
+
+	// 应用 limit
+	if limit > 0 && limit < len(hosts) {
+		hosts = hosts[:limit]
+	}
+
+	return hosts
 }
