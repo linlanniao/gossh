@@ -92,9 +92,9 @@ func (e *Executor) ExecuteScriptWithBecome(scriptPath string, concurrency int, b
 }
 
 // UploadFile 并发上传文件
-func (e *Executor) UploadFile(localPath string, remotePath string, mode string, concurrency int, progressTracker ProgressTracker) ([]*ssh.Result, error) {
+func (e *Executor) UploadFile(localPath string, remotePath string, mode string, concurrency int, progressTracker ProgressTracker, backup bool, force bool) ([]*ssh.Result, error) {
 	task := func(client *ssh.Client, h Host) (*ssh.Result, error) {
-		return client.UploadFile(localPath, remotePath, mode)
+		return client.UploadFile(localPath, remotePath, mode, backup, force)
 	}
 	command := fmt.Sprintf("upload %s -> %s", localPath, remotePath)
 	return e.executeConcurrent(task, command, concurrency, progressTracker)

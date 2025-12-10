@@ -35,6 +35,8 @@ type UploadCommandRequest struct {
 	LogDir      string
 	Limit       int
 	Offset      int
+	Backup      bool // 如果文件已存在，先备份再上传
+	Force       bool // 强制覆盖已存在的文件
 }
 
 // UploadCommandResponse upload 命令的响应
@@ -70,6 +72,8 @@ func (c *UploadController) Execute(req *UploadCommandRequest) (*UploadCommandRes
 		mergedReq.Mode,
 		mergedReq.Concurrency,
 		mergedReq.ShowOutput,
+		mergedReq.Backup,
+		mergedReq.Force,
 	)
 
 	// 记录命令开始
@@ -84,6 +88,8 @@ func (c *UploadController) Execute(req *UploadCommandRequest) (*UploadCommandRes
 		"mode":        mergedReq.Mode,
 		"concurrency": mergedReq.Concurrency,
 		"show_output": mergedReq.ShowOutput,
+		"backup":      mergedReq.Backup,
+		"force":       mergedReq.Force,
 	})
 
 	// 验证参数
@@ -137,6 +143,8 @@ func (c *UploadController) Execute(req *UploadCommandRequest) (*UploadCommandRes
 		mode,
 		mergedReq.Concurrency,
 		progressTracker,
+		mergedReq.Backup,
+		mergedReq.Force,
 	)
 
 	// 记录结束时间并计算总耗时
@@ -210,6 +218,8 @@ func (c *UploadController) mergeConfig(req *UploadCommandRequest) *UploadCommand
 		LogDir:      req.LogDir,
 		Limit:       req.Limit,
 		Offset:      req.Offset,
+		Backup:      req.Backup,
+		Force:       req.Force,
 	}
 }
 

@@ -181,8 +181,8 @@ func (c *Client) ExecuteScriptWithBecome(scriptPath string, become bool, becomeU
 	// 生成唯一的临时文件名（使用时间戳和随机数）
 	tempFileName := fmt.Sprintf("/tmp/gossh_script_%d_%d.sh", time.Now().UnixNano(), os.Getpid())
 
-	// 使用 UploadFile 方法上传脚本文件
-	_, err := c.UploadFile(scriptPath, tempFileName, "0755")
+	// 使用 UploadFile 方法上传脚本文件（临时文件总是强制覆盖）
+	_, err := c.UploadFile(scriptPath, tempFileName, "0755", false, true)
 	if err != nil {
 		return &Result{
 			Host:     c.host,
@@ -245,7 +245,7 @@ func (c *Client) cleanupTempFile(conn *ssh.Client, filePath string) error {
 }
 
 // UploadFile 上传文件到远程主机
-func (c *Client) UploadFile(localPath string, remotePath string, mode string) (*Result, error) {
+func (c *Client) UploadFile(localPath string, remotePath string, mode string, backup bool, force bool) (*Result, error) {
 	startTime := time.Now()
 	command := fmt.Sprintf("upload %s -> %s", localPath, remotePath)
 
@@ -261,6 +261,40 @@ func (c *Client) UploadFile(localPath string, remotePath string, mode string) (*
 	}
 	defer conn.Close()
 
+	// 检查文件是否存在
+	fileExists, err := c.checkFileExists(conn, remotePath)
+	if err != nil {
+		return c.createErrorResult(command, startTime, err, "检查远程文件失败"), err
+	}
+
+	// 如果文件存在，根据参数决定如何处理
+	var backupPath string
+	if fileExists {
+		// 如果既没有 force 也没有 backup，则跳过
+		if !force && !backup {
+			// 默认行为：不覆盖，跳过（标记为失败）
+			return &Result{
+				Host:     c.host,
+				Command:  command,
+				Stdout:   "",
+				Stderr:   fmt.Sprintf("文件已存在，已跳过: %s（或使用 --force / --backup）", remotePath),
+				ExitCode: 1,
+				Duration: time.Since(startTime),
+				Error:    fmt.Errorf("文件已存在，已跳过"),
+			}, nil
+		}
+
+		// 如果启用了 backup，先备份再上传（无论是否有 force）
+		if backup {
+			var err error
+			backupPath, err = c.backupRemoteFile(conn, remotePath)
+			if err != nil {
+				return c.createErrorResult(command, startTime, err, "备份远程文件失败"), err
+			}
+			command = fmt.Sprintf("upload %s -> %s (已备份: %s)", localPath, remotePath, backupPath)
+		}
+	}
+
 	scpClient, err := c.createSCPClient(conn)
 	if err != nil {
 		return c.createErrorResult(command, startTime, err, "创建 SCP 客户端失败"), err
@@ -272,10 +306,17 @@ func (c *Client) UploadFile(localPath string, remotePath string, mode string) (*
 		return c.createErrorResult(command, startTime, err, "上传文件失败"), err
 	}
 
+	stdoutMsg := fmt.Sprintf("文件已成功上传到 %s", remotePath)
+	if fileExists && backup && backupPath != "" {
+		stdoutMsg = fmt.Sprintf("文件已成功上传到 %s (已备份原文件: %s)", remotePath, backupPath)
+	} else if fileExists && force && !backup {
+		stdoutMsg = fmt.Sprintf("文件已成功覆盖 %s", remotePath)
+	}
+
 	return &Result{
 		Host:     c.host,
 		Command:  command,
-		Stdout:   fmt.Sprintf("文件已成功上传到 %s", remotePath),
+		Stdout:   stdoutMsg,
 		Stderr:   "",
 		ExitCode: 0,
 		Duration: time.Since(startTime),
@@ -321,6 +362,55 @@ func (c *Client) copyFile(scpClient scp.Client, localFile *os.File, remotePath, 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	return scpClient.CopyFromFile(ctx, *localFile, remotePath, mode)
+}
+
+// checkFileExists 检查远程文件是否存在
+func (c *Client) checkFileExists(conn *ssh.Client, remotePath string) (bool, error) {
+	session, err := conn.NewSession()
+	if err != nil {
+		return false, fmt.Errorf("创建会话失败: %w", err)
+	}
+	defer session.Close()
+
+	// 使用 test -f 命令检查文件是否存在，使用引号包裹路径以防止特殊字符问题
+	command := fmt.Sprintf("test -f %q", remotePath)
+	err = session.Run(command)
+	if err != nil {
+		if exitError, ok := err.(*ssh.ExitError); ok {
+			// 退出码为 1 表示文件不存在
+			if exitError.ExitStatus() == 1 {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("检查文件存在性失败: %w", err)
+	}
+	return true, nil
+}
+
+// getBackupPath 生成备份文件路径
+func (c *Client) getBackupPath(remotePath string) string {
+	now := time.Now()
+	timestamp := now.Format("20060102-150405")
+	// 生成备份文件名：原文件名.backup.YYYYMMDD-HHMMSS
+	return fmt.Sprintf("%s.backup.%s", remotePath, timestamp)
+}
+
+// backupRemoteFile 备份远程文件
+func (c *Client) backupRemoteFile(conn *ssh.Client, remotePath string) (string, error) {
+	backupPath := c.getBackupPath(remotePath)
+	session, err := conn.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("创建会话失败: %w", err)
+	}
+	defer session.Close()
+
+	// 使用 cp 命令备份文件，使用引号包裹路径以防止特殊字符问题
+	command := fmt.Sprintf("cp %q %q", remotePath, backupPath)
+	err = session.Run(command)
+	if err != nil {
+		return "", fmt.Errorf("备份文件失败: %w", err)
+	}
+	return backupPath, nil
 }
 
 // createErrorResult 创建错误结果对象

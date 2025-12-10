@@ -771,7 +771,7 @@ func PrintScriptConfig(inventory, group, user, keyPath, password, port, scriptPa
 }
 
 // PrintUploadConfig 打印 upload 命令的配置参数
-func PrintUploadConfig(inventory, group, user, keyPath, password, port, localPath, remotePath, mode string, concurrency int, showOutput bool) {
+func PrintUploadConfig(inventory, group, user, keyPath, password, port, localPath, remotePath, mode string, concurrency int, showOutput bool, backup bool, force bool) {
 	t := createConfigTable(true)
 	data := &ConfigData{
 		Inventory:    inventory,
@@ -802,6 +802,8 @@ func PrintUploadConfig(inventory, group, user, keyPath, password, port, localPat
 		t.AppendRow(table.Row{"远程路径", wrapText(remoteText, 80)})
 	}
 	t.AppendRow(table.Row{"文件权限", text.Colors{text.FgCyan}.Sprint(getValueOrDefault(mode, "0644"))})
+	t.AppendRow(table.Row{"备份文件", text.Colors{text.FgCyan}.Sprint(formatBool(backup))})
+	t.AppendRow(table.Row{"强制覆盖", text.Colors{text.FgCyan}.Sprint(formatBool(force))})
 
 	printOutputConfig(t, showOutput)
 	renderConfigTable(t)
@@ -829,6 +831,14 @@ func getValueOrDefault(value, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// formatBool 格式化布尔值为字符串
+func formatBool(b bool) string {
+	if b {
+		return "是"
+	}
+	return "否"
 }
 
 // ConfigData 配置数据结构

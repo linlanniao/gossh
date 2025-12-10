@@ -15,6 +15,8 @@ var (
 	uploadLogDir     string
 	uploadLimit      int
 	uploadOffset     int
+	uploadBackup     bool
+	uploadForce      bool
 )
 
 // uploadCmd represents the upload command
@@ -47,7 +49,16 @@ var uploadCmd = &cobra.Command{
   gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --limit 5
 
   # 跳过前 3 台主机，然后执行接下来的 5 台
-  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --offset 3 --limit 5`,
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --offset 3 --limit 5
+
+  # 如果文件已存在，先备份再上传（备份文件名格式: 原文件名.backup.YYYYMMDD-HHMMSS）
+  gossh upload -i hosts.txt -g all -u root -l config.conf -r /etc/config.conf --backup --force
+
+  # 强制覆盖已存在的文件（不备份）
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --force
+
+  # 默认行为：如果文件已存在则跳过（不覆盖）
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewUploadController()
@@ -69,6 +80,8 @@ var uploadCmd = &cobra.Command{
 			LogDir:      uploadLogDir,
 			Limit:       uploadLimit,
 			Offset:      uploadOffset,
+			Backup:      uploadBackup,
+			Force:       uploadForce,
 		}
 
 		// 执行命令
@@ -97,4 +110,6 @@ func init() {
 	uploadCmd.Flags().StringVar(&uploadLogDir, "log-dir", "", "日志目录路径（可选，JSON 格式）。会自动生成文件名：upload-时间戳.log")
 	uploadCmd.Flags().IntVar(&uploadLimit, "limit", 0, "限制执行的主机数量（0 表示不限制）")
 	uploadCmd.Flags().IntVar(&uploadOffset, "offset", 0, "跳过前 N 台主机（默认: 0）")
+	uploadCmd.Flags().BoolVar(&uploadBackup, "backup", false, "如果文件已存在，先备份再上传（备份文件名格式: 原文件名.backup.YYYYMMDD-HHMMSS）")
+	uploadCmd.Flags().BoolVar(&uploadForce, "force", false, "强制覆盖已存在的文件（默认: false，遇到已存在的文件会跳过）")
 }

@@ -147,8 +147,17 @@ gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz -f 10
 # 限制执行的主机数量（只执行前 5 台主机）
 gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --limit 5
 
-# 跳过前 3 台主机，然后执行接下来的 5 台
-gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --offset 3 --limit 5
+  # 跳过前 3 台主机，然后执行接下来的 5 台
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --offset 3 --limit 5
+
+  # 如果文件已存在，先备份再上传（备份文件名格式: 原文件名.backup.YYYYMMDD-HHMMSS）
+  gossh upload -i hosts.txt -g all -u root -l config.conf -r /etc/config.conf --backup
+
+  # 强制覆盖已存在的文件（不备份）
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --force
+
+  # 默认行为：如果文件已存在则跳过（不覆盖，标记为失败）
+  gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz
 ```
 
 ### ping 命令 - 测试 SSH 连接
@@ -258,10 +267,18 @@ gossh list-group -i ansible_hosts --one-line
 - `-l, --local`: 本地文件路径（必需）
 - `-r, --remote`: 远程文件路径（必需）
 - `--mode`: 文件权限（默认: 0644）
+- `--backup`: 如果文件已存在，先备份再上传（默认: false）。备份文件名格式: `原文件名.backup.YYYYMMDD-HHMMSS`，例如: `file1.txt.backup.20251201-002400`
+- `--force`: 强制覆盖已存在的文件（默认: false）。默认行为是遇到已存在的文件会跳过（标记为失败）
 - `--show-output`: 显示命令输出（默认: true）
 - `--log-dir`: 日志目录路径（可选，JSON 格式）。会自动生成文件名：upload-时间戳.log
 - `--limit`: 限制执行的主机数量（0 表示不限制）。主机列表会按照 Address:Port 排序，确保每次执行顺序一致
 - `--offset`: 跳过前 N 台主机（默认: 0）。与 `--limit` 配合使用可以实现分页执行
+
+**文件覆盖行为说明：**
+- 默认行为（`--force=false` 且 `--backup=false`）：如果文件已存在，跳过上传（标记为失败）
+- 使用 `--backup`（`--backup=true`）：如果文件已存在，先备份原文件再上传新文件（成功）。`--backup` 可以独立使用，不需要 `--force`
+- 使用 `--force`（`--force=true` 且 `--backup=false`）：如果文件已存在，直接覆盖（成功）
+- 同时使用 `--backup` 和 `--force`：如果文件已存在，先备份再上传（成功）
 
 #### list-host 命令专用参数
 
@@ -343,11 +360,17 @@ gossh run -i hosts.txt -g all -u deploy -c "whoami" --become --become-user appus
 ### 示例 2.2: 批量上传文件
 
 ```bash
-# 上传文件到远程主机
+# 上传文件到远程主机（如果文件已存在则跳过）
 gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz
 
 # 上传脚本文件并设置执行权限
 gossh upload -i hosts.txt -g all -u root -l deploy.sh -r /tmp/deploy.sh --mode 0755
+
+# 如果文件已存在，先备份再上传（备份文件名格式: 原文件名.backup.YYYYMMDD-HHMMSS）
+gossh upload -i hosts.txt -g all -u root -l config.conf -r /etc/config.conf --backup
+
+# 强制覆盖已存在的文件（不备份）
+gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz --force
 ```
 
 ### 示例 3: 快速检查服务器状态
