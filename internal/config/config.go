@@ -198,8 +198,8 @@ type hostWithGroup struct {
 	group string
 }
 
-// LoadHostsFromDirectory 从目录加载所有 INI 文件的主机列表并聚合
-// 会读取目录下所有 .ini 文件，先聚合所有主机，然后根据分组筛选
+// LoadHostsFromDirectory 从目录加载所有文件的主机列表并聚合
+// 会递归读取目录下所有子文件（支持普通格式和 INI 格式），先聚合所有主机，然后根据分组筛选
 // group 为空字符串或 "all" 时加载所有分组的主机
 func LoadHostsFromDirectory(dirPath, group string) ([]executor.Host, error) {
 	// 检查目录是否存在
@@ -221,29 +221,51 @@ func LoadHostsFromDirectory(dirPath, group string) ([]executor.Host, error) {
 	var allHostsWithGroup []hostWithGroup
 	hostMap := make(map[string]bool) // 用于去重，key 格式: "address:port"
 
-	// 遍历目录中的所有文件，先聚合所有主机
+	// 支持的文件扩展名列表（空字符串表示无扩展名的文件也支持）
+	supportedExts := map[string]bool{
+		".ini":  true,
+		".txt":  true,
+		".conf": true,
+		".hosts": true,
+		"":      true, // 无扩展名的文件也支持
+	}
+
+	// 遍历目录中的所有文件（递归），先聚合所有主机
 	err = filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// 只处理 .ini 文件
-		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".ini") {
-			// 加载文件中的所有主机和分组信息（不指定分组，加载所有）
-			hostsWithGroups, err := loadHostsFromFileWithGroups(path)
-			if err != nil {
-				// 如果某个文件读取失败，记录错误但继续处理其他文件
-				fmt.Fprintf(os.Stderr, "警告: 读取文件 %s 失败: %v\n", path, err)
-				return nil
-			}
+		// 跳过目录
+		if info.IsDir() {
+			return nil
+		}
 
-			// 聚合主机并去重
-			for _, hwg := range hostsWithGroups {
-				key := fmt.Sprintf("%s:%s", hwg.host.Address, hwg.host.Port)
-				if !hostMap[key] {
-					hostMap[key] = true
-					allHostsWithGroup = append(allHostsWithGroup, hwg)
-				}
+		// 跳过隐藏文件（以 . 开头的文件）
+		if strings.HasPrefix(info.Name(), ".") {
+			return nil
+		}
+
+		// 检查文件扩展名
+		ext := strings.ToLower(filepath.Ext(info.Name()))
+		if !supportedExts[ext] {
+			return nil
+		}
+
+		// 加载文件中的所有主机和分组信息（不指定分组，加载所有）
+		hostsWithGroups, err := loadHostsFromFileWithGroups(path)
+		if err != nil {
+			// 如果某个文件读取失败，记录错误但继续处理其他文件
+			fmt.Fprintf(os.Stderr, "警告: 读取文件 %s 失败: %v\n", path, err)
+			return nil
+		}
+
+		// 聚合主机并去重
+		for _, hwg := range hostsWithGroups {
+			key := fmt.Sprintf("%s:%s", hwg.host.Address, hwg.host.Port)
+			if !hostMap[key] {
+				hostMap[key] = true
+				allHostsWithGroup = append(allHostsWithGroup, hwg)
 			}
 		}
 

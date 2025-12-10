@@ -570,12 +570,10 @@ func (pt *ProgressTracker) Stop() {
 }
 
 // PrintPingConfig 打印 ping 命令的配置参数
-func PrintPingConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port string, concurrency int, timeout time.Duration) {
+func PrintPingConfig(inventory, group, user, keyPath, password, port string, concurrency int, timeout time.Duration) {
 	t := createConfigTable(false)
 	data := &ConfigData{
-		HostsFile:   hostsFile,
-		HostsDir:    hostsDir,
-		HostsString: hostsString,
+		Inventory:   inventory,
 		Group:       group,
 		User:        user,
 		KeyPath:     keyPath,
@@ -596,12 +594,10 @@ func PrintPingConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, pas
 }
 
 // PrintRunConfig 打印 run 命令的配置参数
-func PrintRunConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port, command string, become bool, becomeUser string, concurrency int, showOutput bool) {
+func PrintRunConfig(inventory, group, user, keyPath, password, port, command string, become bool, becomeUser string, concurrency int, showOutput bool) {
 	t := createConfigTable(true)
 	data := &ConfigData{
-		HostsFile:    hostsFile,
-		HostsDir:     hostsDir,
-		HostsString:  hostsString,
+		Inventory:    inventory,
 		Group:        group,
 		User:         user,
 		KeyPath:      keyPath,
@@ -630,12 +626,10 @@ func PrintRunConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, pass
 }
 
 // PrintScriptConfig 打印 script 命令的配置参数
-func PrintScriptConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port, scriptPath string, become bool, becomeUser string, concurrency int, showOutput bool) {
+func PrintScriptConfig(inventory, group, user, keyPath, password, port, scriptPath string, become bool, becomeUser string, concurrency int, showOutput bool) {
 	t := createConfigTable(true)
 	data := &ConfigData{
-		HostsFile:    hostsFile,
-		HostsDir:     hostsDir,
-		HostsString:  hostsString,
+		Inventory:    inventory,
 		Group:        group,
 		User:         user,
 		KeyPath:      keyPath,
@@ -664,12 +658,10 @@ func PrintScriptConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, p
 }
 
 // PrintUploadConfig 打印 upload 命令的配置参数
-func PrintUploadConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, password, port, localPath, remotePath, mode string, concurrency int, showOutput bool) {
+func PrintUploadConfig(inventory, group, user, keyPath, password, port, localPath, remotePath, mode string, concurrency int, showOutput bool) {
 	t := createConfigTable(true)
 	data := &ConfigData{
-		HostsFile:    hostsFile,
-		HostsDir:     hostsDir,
-		HostsString:  hostsString,
+		Inventory:    inventory,
 		Group:        group,
 		User:         user,
 		KeyPath:      keyPath,
@@ -703,14 +695,12 @@ func PrintUploadConfig(hostsFile, hostsDir, hostsString, group, user, keyPath, p
 }
 
 // PrintListConfig 打印 list 命令的配置参数
-func PrintListConfig(hostsFile, hostsDir, hostsString, group, format string) {
+func PrintListConfig(inventory, group, format string) {
 	t := createConfigTable(false)
 	data := &ConfigData{
-		HostsFile:   hostsFile,
-		HostsDir:    hostsDir,
-		HostsString: hostsString,
-		Group:       group,
-		Format:      format,
+		Inventory: inventory,
+		Group:     group,
+		Format:    format,
 	}
 	printCommonConfig(t, data)
 
@@ -730,9 +720,7 @@ func getValueOrDefault(value, defaultValue string) string {
 
 // ConfigData 配置数据结构
 type ConfigData struct {
-	HostsFile    string
-	HostsDir     string
-	HostsString  string
+	Inventory    string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
 	Group        string
 	User         string
 	KeyPath      string
@@ -761,12 +749,8 @@ func printCommonConfig(t table.Writer, data *ConfigData) {
 	}
 
 	var hostsSource string
-	if data.HostsDir != "" {
-		hostsSource = fmt.Sprintf("目录 (%s)", data.HostsDir)
-	} else if data.HostsFile != "" {
-		hostsSource = fmt.Sprintf("文件 (%s)", data.HostsFile)
-	} else if data.HostsString != "" {
-		hostsSource = fmt.Sprintf("命令行参数 (%s)", data.HostsString)
+	if data.Inventory != "" {
+		hostsSource = fmt.Sprintf("inventory (%s)", data.Inventory)
 	} else {
 		hostsSource = text.Colors{text.FgHiYellow}.Sprint("ansible.cfg inventory")
 	}

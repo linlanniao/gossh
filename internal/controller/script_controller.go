@@ -20,9 +20,8 @@ func NewScriptController() *ScriptController {
 
 // ScriptCommandRequest script 命令的请求参数
 type ScriptCommandRequest struct {
-	HostsFile   string
-	HostsDir    string // Ansible hosts 目录路径
-	HostsString string
+	ConfigFile  string // ansible.cfg 配置文件路径
+	Inventory   string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
 	Group       string // Ansible INI 格式的分组名称
 	User        string
 	KeyPath     string
@@ -56,9 +55,7 @@ func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandRes
 
 	// 打印当前配置参数
 	view.PrintScriptConfig(
-		mergedReq.HostsFile,
-		mergedReq.HostsDir,
-		mergedReq.HostsString,
+		mergedReq.Inventory,
 		mergedReq.Group,
 		mergedReq.User,
 		mergedReq.KeyPath,
@@ -73,18 +70,16 @@ func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandRes
 
 	// 记录命令开始
 	log.LogCommandStart("script", map[string]interface{}{
-		"hosts_file":   mergedReq.HostsFile,
-		"hosts_dir":    mergedReq.HostsDir,
-		"hosts_string": mergedReq.HostsString,
-		"group":        mergedReq.Group,
-		"user":         mergedReq.User,
-		"key_path":     mergedReq.KeyPath,
-		"port":         mergedReq.Port,
-		"script_path":  mergedReq.ScriptPath,
-		"become":       mergedReq.Become,
-		"become_user":  mergedReq.BecomeUser,
-		"concurrency":  mergedReq.Concurrency,
-		"show_output":  mergedReq.ShowOutput,
+		"inventory":   mergedReq.Inventory,
+		"group":       mergedReq.Group,
+		"user":        mergedReq.User,
+		"key_path":    mergedReq.KeyPath,
+		"port":        mergedReq.Port,
+		"script_path": mergedReq.ScriptPath,
+		"become":      mergedReq.Become,
+		"become_user": mergedReq.BecomeUser,
+		"concurrency": mergedReq.Concurrency,
+		"show_output": mergedReq.ShowOutput,
 	})
 
 	// 验证参数
@@ -174,9 +169,8 @@ func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandRes
 // mergeConfig 合并配置（优先级：命令行参数 > ansible.cfg > 默认值）
 func (c *ScriptController) mergeConfig(req *ScriptCommandRequest) *ScriptCommandRequest {
 	commonCfg := MergeCommonConfig(&CommonConfig{
-		HostsFile:   req.HostsFile,
-		HostsDir:    req.HostsDir,
-		HostsString: req.HostsString,
+		ConfigFile:  req.ConfigFile,
+		Inventory:   req.Inventory,
 		Group:       req.Group,
 		User:        req.User,
 		KeyPath:     req.KeyPath,
@@ -186,9 +180,7 @@ func (c *ScriptController) mergeConfig(req *ScriptCommandRequest) *ScriptCommand
 	})
 
 	return &ScriptCommandRequest{
-		HostsFile:   commonCfg.HostsFile,
-		HostsDir:    commonCfg.HostsDir,
-		HostsString: commonCfg.HostsString,
+		Inventory:   commonCfg.Inventory,
 		Group:       commonCfg.Group,
 		User:        commonCfg.User,
 		KeyPath:     commonCfg.KeyPath,
@@ -219,9 +211,8 @@ func (c *ScriptController) validateRequest(req *ScriptCommandRequest) error {
 // loadHosts 加载主机列表
 func (c *ScriptController) loadHosts(req *ScriptCommandRequest) ([]executor.Host, error) {
 	return LoadHosts(&CommonConfig{
-		HostsFile:   req.HostsFile,
-		HostsDir:    req.HostsDir,
-		HostsString: req.HostsString,
-		Group:       req.Group,
+		ConfigFile: req.ConfigFile,
+		Inventory:  req.Inventory,
+		Group:      req.Group,
 	}, true)
 }

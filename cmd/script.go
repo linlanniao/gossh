@@ -8,9 +8,7 @@ import (
 )
 
 var (
-	scriptHostsFile   string
-	scriptHostsDir    string
-	scriptHostsString string
+	scriptInventory   string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
 	scriptGroup       string
 	scriptUser        string
 	scriptKeyPath     string
@@ -33,33 +31,32 @@ var scriptCmd = &cobra.Command{
 
 示例:
   # 使用 -g 指定组名，只对指定分组的主机执行脚本
-  gossh script -d ansible_hosts -g test -u root -s deploy.sh
-  gossh script -f hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -s backup.sh
+  gossh script -i ansible_hosts -g test -u root -s deploy.sh
+  gossh script -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -s backup.sh
 
   # 从文件读取主机列表执行脚本
-  gossh script -f hosts.txt -u root -k ~/.ssh/id_rsa -s deploy.sh
+  gossh script -i hosts.txt -u root -k ~/.ssh/id_rsa -s deploy.sh
 
   # 从目录读取所有 Ansible hosts 文件并聚合
-  gossh script -d ansible_hosts -u root -k ~/.ssh/id_rsa -s deploy.sh
+  gossh script -i ansible_hosts -u root -k ~/.ssh/id_rsa -s deploy.sh
 
-  # 从命令行参数指定主机执行脚本
-  gossh script -H "192.168.1.10,192.168.1.11" -u root -s deploy.sh
+  # 从命令行参数指定主机执行脚本（逗号分隔）
+  gossh script -i "192.168.1.10,192.168.1.11" -u root -s deploy.sh
 
   # 使用 become 模式（sudo）执行脚本
-  gossh script -f hosts.txt -u root -s deploy.sh --become
-  gossh script -f hosts.txt -u root -s deploy.sh --become --become-user appuser
+  gossh script -i hosts.txt -u root -s deploy.sh --become
+  gossh script -i hosts.txt -u root -s deploy.sh --become --become-user appuser
 
   # 指定并发数
-  gossh script -f hosts.txt -u root -s deploy.sh --concurrency 10`,
+  gossh script -i hosts.txt -u root -s deploy.sh --concurrency 10`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewScriptController()
 
 		// 构建请求
 		req := &controller.ScriptCommandRequest{
-			HostsFile:   scriptHostsFile,
-			HostsDir:    scriptHostsDir,
-			HostsString: scriptHostsString,
+			ConfigFile:  configFile,
+			Inventory:   scriptInventory,
 			Group:       scriptGroup,
 			User:        scriptUser,
 			KeyPath:     scriptKeyPath,
@@ -90,10 +87,8 @@ func init() {
 	rootCmd.AddCommand(scriptCmd)
 
 	// 主机列表相关参数
-	scriptCmd.Flags().StringVarP(&scriptHostsFile, "file", "f", "", "主机列表文件路径（支持普通格式和 Ansible INI 格式）")
-	scriptCmd.Flags().StringVarP(&scriptHostsDir, "dir", "d", "", "Ansible hosts 目录路径（读取目录下所有 .ini 文件并聚合）")
-	scriptCmd.Flags().StringVarP(&scriptHostsString, "hosts", "H", "", "主机列表（逗号分隔），例如: 192.168.1.10,192.168.1.11")
-	scriptCmd.Flags().StringVarP(&scriptGroup, "group", "g", "", "Ansible INI 格式的分组名称（仅在使用 -f 或 -d 参数时有效），例如: -g test 或 -g web_servers")
+	scriptCmd.Flags().StringVarP(&scriptInventory, "inventory", "i", "", "主机列表（文件路径、目录路径或逗号分隔的主机列表）。如果指定目录，会递归读取目录下所有子文件并聚合，例如: -i hosts.ini 或 -i hosts_dir/ 或 -i 192.168.1.10,192.168.1.11")
+	scriptCmd.Flags().StringVarP(&scriptGroup, "group", "g", "", "Ansible INI 格式的分组名称（仅在使用 -i 参数指定文件或目录时有效），例如: -g test 或 -g web_servers")
 
 	// 认证相关参数
 	scriptCmd.Flags().StringVarP(&scriptUser, "user", "u", "", "SSH 用户名（可从 ansible.cfg 的 remote_user 读取）")

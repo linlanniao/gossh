@@ -20,9 +20,8 @@ func NewRunController() *RunController {
 
 // RunCommandRequest run 命令的请求参数
 type RunCommandRequest struct {
-	HostsFile   string
-	HostsDir    string // Ansible hosts 目录路径
-	HostsString string
+	ConfigFile  string // ansible.cfg 配置文件路径
+	Inventory   string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
 	Group       string // Ansible INI 格式的分组名称
 	User        string
 	KeyPath     string
@@ -56,9 +55,7 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 
 	// 打印当前配置参数
 	view.PrintRunConfig(
-		mergedReq.HostsFile,
-		mergedReq.HostsDir,
-		mergedReq.HostsString,
+		mergedReq.Inventory,
 		mergedReq.Group,
 		mergedReq.User,
 		mergedReq.KeyPath,
@@ -73,18 +70,16 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 
 	// 记录命令开始
 	log.LogCommandStart("run", map[string]interface{}{
-		"hosts_file":   mergedReq.HostsFile,
-		"hosts_dir":    mergedReq.HostsDir,
-		"hosts_string": mergedReq.HostsString,
-		"group":        mergedReq.Group,
-		"user":         mergedReq.User,
-		"key_path":     mergedReq.KeyPath,
-		"port":         mergedReq.Port,
-		"command":      mergedReq.Command,
-		"become":       mergedReq.Become,
-		"become_user":  mergedReq.BecomeUser,
-		"concurrency":  mergedReq.Concurrency,
-		"show_output":  mergedReq.ShowOutput,
+		"inventory":   mergedReq.Inventory,
+		"group":       mergedReq.Group,
+		"user":        mergedReq.User,
+		"key_path":    mergedReq.KeyPath,
+		"port":        mergedReq.Port,
+		"command":     mergedReq.Command,
+		"become":      mergedReq.Become,
+		"become_user": mergedReq.BecomeUser,
+		"concurrency": mergedReq.Concurrency,
+		"show_output": mergedReq.ShowOutput,
 	})
 
 	// 验证参数
@@ -175,9 +170,8 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 // mergeConfig 合并配置（优先级：命令行参数 > ansible.cfg > 默认值）
 func (c *RunController) mergeConfig(req *RunCommandRequest) *RunCommandRequest {
 	commonCfg := MergeCommonConfig(&CommonConfig{
-		HostsFile:   req.HostsFile,
-		HostsDir:    req.HostsDir,
-		HostsString: req.HostsString,
+		ConfigFile:  req.ConfigFile,
+		Inventory:   req.Inventory,
 		Group:       req.Group,
 		User:        req.User,
 		KeyPath:     req.KeyPath,
@@ -187,9 +181,7 @@ func (c *RunController) mergeConfig(req *RunCommandRequest) *RunCommandRequest {
 	})
 
 	return &RunCommandRequest{
-		HostsFile:   commonCfg.HostsFile,
-		HostsDir:    commonCfg.HostsDir,
-		HostsString: commonCfg.HostsString,
+		Inventory:   commonCfg.Inventory,
 		Group:       commonCfg.Group,
 		User:        commonCfg.User,
 		KeyPath:     commonCfg.KeyPath,
@@ -220,9 +212,8 @@ func (c *RunController) validateRequest(req *RunCommandRequest) error {
 // loadHosts 加载主机列表
 func (c *RunController) loadHosts(req *RunCommandRequest) ([]executor.Host, error) {
 	return LoadHosts(&CommonConfig{
-		HostsFile:   req.HostsFile,
-		HostsDir:    req.HostsDir,
-		HostsString: req.HostsString,
-		Group:       req.Group,
+		ConfigFile: req.ConfigFile,
+		Inventory:  req.Inventory,
+		Group:      req.Group,
 	}, true)
 }

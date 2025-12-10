@@ -9,9 +9,7 @@ import (
 )
 
 var (
-	pingHostsFile   string
-	pingHostsDir    string // Ansible hosts 目录路径
-	pingHostsString string
+	pingInventory   string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
 	pingGroup       string // Ansible INI 格式的分组名称
 	pingUser        string
 	pingKeyPath     string
@@ -29,29 +27,28 @@ var pingCmd = &cobra.Command{
 
 示例:
   # 使用 -g 指定组名，只测试指定分组的主机
-  gossh ping -d ansible_hosts -g test -u root
-  gossh ping -f hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa
+  gossh ping -i ansible_hosts -g test -u root
+  gossh ping -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa
 
   # 从文件读取主机列表测试连接
-  gossh ping -f hosts.txt -u root -k ~/.ssh/id_rsa
+  gossh ping -i hosts.txt -u root -k ~/.ssh/id_rsa
 
   # 从目录读取所有 Ansible hosts 文件并聚合测试
-  gossh ping -d ansible_hosts -u root -k ~/.ssh/id_rsa
+  gossh ping -i ansible_hosts -u root -k ~/.ssh/id_rsa
 
-  # 从命令行参数指定主机测试连接
-  gossh ping -H "192.168.1.10,192.168.1.11" -u root
+  # 从命令行参数指定主机测试连接（逗号分隔）
+  gossh ping -i "192.168.1.10,192.168.1.11" -u root
 
   # 指定并发数
-  gossh ping -f hosts.txt -u root --concurrency 10`,
+  gossh ping -i hosts.txt -u root --concurrency 10`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 创建 controller
 		ctrl := controller.NewPingController()
 
 		// 构建请求
 		req := &controller.PingRequest{
-			HostsFile:   pingHostsFile,
-			HostsDir:    pingHostsDir,
-			HostsString: pingHostsString,
+			ConfigFile:  configFile,
+			Inventory:   pingInventory,
 			Group:       pingGroup,
 			User:        pingUser,
 			KeyPath:     pingKeyPath,
@@ -78,10 +75,8 @@ func init() {
 	rootCmd.AddCommand(pingCmd)
 
 	// 主机列表相关参数
-	pingCmd.Flags().StringVarP(&pingHostsFile, "file", "f", "", "主机列表文件路径（支持普通格式和 Ansible INI 格式）")
-	pingCmd.Flags().StringVarP(&pingHostsDir, "dir", "d", "", "Ansible hosts 目录路径（读取目录下所有 .ini 文件并聚合）")
-	pingCmd.Flags().StringVarP(&pingHostsString, "hosts", "H", "", "主机列表（逗号分隔），例如: 192.168.1.10,192.168.1.11")
-	pingCmd.Flags().StringVarP(&pingGroup, "group", "g", "", "Ansible INI 格式的分组名称（仅在使用 -f 或 -d 参数时有效），例如: -g test 或 -g web_servers")
+	pingCmd.Flags().StringVarP(&pingInventory, "inventory", "i", "", "主机列表（文件路径、目录路径或逗号分隔的主机列表）。如果指定目录，会递归读取目录下所有子文件并聚合，例如: -i hosts.ini 或 -i hosts_dir/ 或 -i 192.168.1.10,192.168.1.11")
+	pingCmd.Flags().StringVarP(&pingGroup, "group", "g", "", "Ansible INI 格式的分组名称（仅在使用 -i 参数指定文件或目录时有效），例如: -g test 或 -g web_servers")
 
 	// 认证相关参数
 	pingCmd.Flags().StringVarP(&pingUser, "user", "u", "", "SSH 用户名（可从 ansible.cfg 的 remote_user 读取）")

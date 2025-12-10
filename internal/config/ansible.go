@@ -21,38 +21,71 @@ type AnsibleConfig struct {
 }
 
 // LoadAnsibleConfig 加载 ansible.cfg 配置文件
-// 会在当前目录和父目录中查找 ansible.cfg 文件
-func LoadAnsibleConfig() (*AnsibleConfig, error) {
-	// 查找 ansible.cfg 文件
-	cfgPath, err := findAnsibleConfig()
-	if err != nil {
-		// 如果找不到配置文件，返回默认配置
-		return &AnsibleConfig{}, nil
+// 如果指定了 configPath，则使用该路径；否则按照以下顺序查找：
+// 1. 环境变量 ANSIBLE_CONFIG
+// 2. 当前目录和父目录中的 ansible.cfg
+// 3. 用户主目录下的 .ansible.cfg
+func LoadAnsibleConfig(configPath string) (*AnsibleConfig, error) {
+	var cfgPath string
+	var err error
+
+	// 如果指定了配置文件路径，直接使用
+	if configPath != "" {
+		if _, err := os.Stat(configPath); err != nil {
+			return nil, fmt.Errorf("配置文件不存在: %s", configPath)
+		}
+		cfgPath = configPath
+	} else {
+		// 首先检查环境变量 ANSIBLE_CONFIG
+		if envCfg := os.Getenv("ANSIBLE_CONFIG"); envCfg != "" {
+			if _, err := os.Stat(envCfg); err == nil {
+				cfgPath = envCfg
+			}
+		}
+
+		// 如果环境变量未设置或文件不存在，查找默认位置
+		if cfgPath == "" {
+			cfgPath, err = findAnsibleConfig()
+			if err != nil {
+				// 如果找不到配置文件，返回默认配置
+				return &AnsibleConfig{}, nil
+			}
+		}
 	}
 
 	return parseAnsibleConfig(cfgPath)
 }
 
 // findAnsibleConfig 查找 ansible.cfg 文件
-// 从当前目录开始，向上查找直到找到或到达根目录
+// 按照以下顺序查找：
+// 1. 当前目录和父目录中的 ansible.cfg
+// 2. 用户主目录下的 .ansible.cfg
 func findAnsibleConfig() (string, error) {
+	// 首先从当前目录开始，向上查找直到找到或到达根目录
 	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
+	if err == nil {
+		for {
+			cfgPath := filepath.Join(dir, "ansible.cfg")
+			if _, err := os.Stat(cfgPath); err == nil {
+				return cfgPath, nil
+			}
+
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				// 已到达根目录
+				break
+			}
+			dir = parent
+		}
 	}
 
-	for {
-		cfgPath := filepath.Join(dir, "ansible.cfg")
+	// 如果当前目录和父目录中未找到，检查用户主目录
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		cfgPath := filepath.Join(homeDir, ".ansible.cfg")
 		if _, err := os.Stat(cfgPath); err == nil {
 			return cfgPath, nil
 		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			// 已到达根目录
-			break
-		}
-		dir = parent
 	}
 
 	return "", fmt.Errorf("未找到 ansible.cfg 文件")

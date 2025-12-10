@@ -9,6 +9,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// configFile 配置文件路径（全局变量，所有子命令都可以访问）
+var configFile string
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "gossh",
@@ -23,8 +26,8 @@ var rootCmd = &cobra.Command{
   - 详细的执行结果输出
 
 使用示例:
-  gossh run -f hosts.txt -u root -k ~/.ssh/id_rsa -c "uptime"
-  gossh run -H "192.168.1.10,192.168.1.11" -u root -c "df -h"`,
+  gossh run -i hosts.txt -u root -k ~/.ssh/id_rsa -c "uptime"
+  gossh run -i "192.168.1.10,192.168.1.11" -u root -c "df -h"`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -37,9 +40,7 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gossh.yaml)")
+	// 添加全局配置文件参数（所有子命令都可以使用）
+	// 类似 ansible 的 ANSIBLE_CONFIG 环境变量，但通过命令行参数指定
+	rootCmd.PersistentFlags().StringVar(&configFile, "config-file", "", "指定 ansible.cfg 配置文件路径。如果未指定，将按以下顺序查找：1) 环境变量 ANSIBLE_CONFIG 2) 当前目录及父目录的 ansible.cfg 3) ~/.ansible.cfg")
 }

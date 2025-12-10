@@ -21,9 +21,8 @@ func NewPingController() *PingController {
 
 // PingRequest ping 命令的请求参数
 type PingRequest struct {
-	HostsFile   string
-	HostsDir    string // Ansible hosts 目录路径
-	HostsString string
+	ConfigFile  string // ansible.cfg 配置文件路径
+	Inventory   string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
 	Group       string // Ansible INI 格式的分组名称
 	User        string
 	KeyPath     string
@@ -46,9 +45,7 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 
 	// 打印当前配置参数
 	view.PrintPingConfig(
-		mergedReq.HostsFile,
-		mergedReq.HostsDir,
-		mergedReq.HostsString,
+		mergedReq.Inventory,
 		mergedReq.Group,
 		mergedReq.User,
 		mergedReq.KeyPath,
@@ -103,9 +100,8 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 // mergeConfig 合并配置（优先级：命令行参数 > ansible.cfg > 默认值）
 func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 	commonCfg := MergeCommonConfig(&CommonConfig{
-		HostsFile:   req.HostsFile,
-		HostsDir:    req.HostsDir,
-		HostsString: req.HostsString,
+		ConfigFile:  req.ConfigFile,
+		Inventory:   req.Inventory,
 		Group:       req.Group,
 		User:        req.User,
 		KeyPath:     req.KeyPath,
@@ -118,7 +114,7 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 	timeout := req.Timeout
 	if timeout <= 0 {
 		// 如果命令行未指定，尝试从 ansible.cfg 读取
-		ansibleCfg, err := config.LoadAnsibleConfig()
+		ansibleCfg, err := config.LoadAnsibleConfig(req.ConfigFile)
 		if err == nil && ansibleCfg.Timeout > 0 {
 			// ansible.cfg 中的 timeout 单位是秒
 			timeout = time.Duration(ansibleCfg.Timeout) * time.Second
@@ -129,9 +125,7 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 	}
 
 	return &PingRequest{
-		HostsFile:   commonCfg.HostsFile,
-		HostsDir:    commonCfg.HostsDir,
-		HostsString: commonCfg.HostsString,
+		Inventory:   commonCfg.Inventory,
 		Group:       commonCfg.Group,
 		User:        commonCfg.User,
 		KeyPath:     commonCfg.KeyPath,
@@ -156,10 +150,9 @@ func (c *PingController) validateRequest(req *PingRequest) error {
 // loadHosts 加载主机列表
 func (c *PingController) loadHosts(req *PingRequest) ([]executor.Host, error) {
 	return LoadHosts(&CommonConfig{
-		HostsFile:   req.HostsFile,
-		HostsDir:    req.HostsDir,
-		HostsString: req.HostsString,
-		Group:       req.Group,
+		ConfigFile: req.ConfigFile,
+		Inventory:  req.Inventory,
+		Group:      req.Group,
 	}, true)
 }
 

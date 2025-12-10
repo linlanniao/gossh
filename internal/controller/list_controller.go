@@ -15,11 +15,10 @@ func NewListController() *ListController {
 
 // ListRequest list 命令的请求参数
 type ListRequest struct {
-	HostsFile   string
-	HostsDir    string // Ansible hosts 目录路径
-	HostsString string
-	Group       string // Ansible INI 格式的分组名称
-	Format      string // 输出格式: ip, full, json
+	ConfigFile string // ansible.cfg 配置文件路径
+	Inventory  string // 主机列表（文件路径、目录路径或逗号分隔的主机列表）
+	Group      string // Ansible INI 格式的分组名称
+	Format     string // 输出格式: ip, full, json
 }
 
 // ListResponse list 命令的响应
@@ -31,9 +30,7 @@ type ListResponse struct {
 func (c *ListController) Execute(req *ListRequest) (*ListResponse, error) {
 	// 打印当前配置参数
 	view.PrintListConfig(
-		req.HostsFile,
-		req.HostsDir,
-		req.HostsString,
+		req.Inventory,
 		req.Group,
 		req.Format,
 	)
@@ -63,9 +60,8 @@ func (c *ListController) validateRequest(req *ListRequest) error {
 // loadHosts 加载主机列表
 func (c *ListController) loadHosts(req *ListRequest) ([]executor.Host, error) {
 	return LoadHosts(&CommonConfig{
-		HostsFile:   req.HostsFile,
-		HostsDir:    req.HostsDir,
-		HostsString: req.HostsString,
-		Group:       req.Group,
+		ConfigFile: req.ConfigFile,
+		Inventory:  req.Inventory,
+		Group:      req.Group,
 	}, true)
 }
