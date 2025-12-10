@@ -39,6 +39,8 @@ type ScriptCommandRequest struct {
 type ScriptCommandResponse struct {
 	Results       []*ssh.Result
 	TotalDuration time.Duration
+	Group         string          // 分组名称（用户指定的）
+	Hosts         []executor.Host // 主机列表（包含分组信息）
 }
 
 // Execute 执行 script 命令
@@ -163,6 +165,8 @@ func (c *ScriptController) Execute(req *ScriptCommandRequest) (*ScriptCommandRes
 	return &ScriptCommandResponse{
 		Results:       results,
 		TotalDuration: totalDuration,
+		Group:         mergedReq.Group,
+		Hosts:         hosts,
 	}, nil
 }
 
@@ -180,6 +184,7 @@ func (c *ScriptController) mergeConfig(req *ScriptCommandRequest) *ScriptCommand
 	})
 
 	return &ScriptCommandRequest{
+		ConfigFile:  req.ConfigFile,
 		Inventory:   commonCfg.Inventory,
 		Group:       commonCfg.Group,
 		User:        commonCfg.User,

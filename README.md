@@ -63,114 +63,190 @@ curl -fsSL https://raw.githubusercontent.com/linlanniao/gossh/main/install.sh | 
 ### run 命令 - 批量执行命令
 
 ```bash
-# 从文件读取主机列表执行命令
-gossh run -f hosts.txt -u root -k ~/.ssh/id_rsa -c "uptime"
+# 使用 -g 指定组名，只对指定分组的主机执行命令
+gossh run -i ansible_hosts -g test -u root -c "df -h"
+gossh run -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -c "uptime"
 
-# 使用 Ansible hosts 文件格式，指定分组
-gossh run -d ansible_hosts -g test -u root -c "df -h"
-gossh run -f hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -c "uptime"
+# 使用 -g all 选择所有分组的主机
+gossh run -i hosts.txt -g all -u root -k ~/.ssh/id_rsa -c "uptime"
 
-# 从命令行参数指定主机执行命令
-gossh run -H "192.168.1.10,192.168.1.11" -u root -c "df -h"
+# 从目录读取所有 Ansible hosts 文件并聚合，选择所有分组
+gossh run -i ansible_hosts -g all -u root -k ~/.ssh/id_rsa -c "uptime"
+
+# 从命令行参数指定主机执行命令（逗号分隔，也需要指定 -g）
+gossh run -i "192.168.1.10,192.168.1.11" -g all -u root -c "df -h"
 
 # 使用 become 模式（sudo）执行命令
-gossh run -f hosts.txt -u root -c "systemctl restart nginx" --become
-gossh run -f hosts.txt -u root -c "whoami" --become --become-user appuser
+gossh run -i hosts.txt -g all -u root -c "systemctl restart nginx" --become
+gossh run -i hosts.txt -g all -u root -c "whoami" --become --become-user appuser
 
 # 指定并发数
-gossh run -f hosts.txt -u root -c "ls -la" --concurrency 10
+gossh run -i hosts.txt -g all -u root -c "ls -la" -f 10
 ```
 
 ### script 命令 - 批量执行脚本文件
 
-脚本会先上传到远程主机的临时目录，执行完成后自动清理。
+脚本会先上传到远程主机的临时目录，然后执行，执行完成后自动清理临时文件。
 
 ```bash
-# 从文件读取主机列表执行脚本
-gossh script -f hosts.txt -u root -k ~/.ssh/id_rsa -s deploy.sh
+# 使用 -g 指定组名，只对指定分组的主机执行脚本
+gossh script -i ansible_hosts -g test -u root -s deploy.sh
+gossh script -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -s backup.sh
 
-# 使用 Ansible hosts 文件格式，指定分组
-gossh script -d ansible_hosts -g test -u root -s deploy.sh
-gossh script -f hosts.ini -g web_servers -u root -s deploy.sh
+# 使用 -g all 选择所有分组的主机执行脚本
+gossh script -i hosts.txt -g all -u root -k ~/.ssh/id_rsa -s deploy.sh
 
-# 从命令行参数指定主机执行脚本
-gossh script -H "192.168.1.10,192.168.1.11" -u root -s deploy.sh
+# 从目录读取所有 Ansible hosts 文件并聚合
+gossh script -i ansible_hosts -g all -u root -k ~/.ssh/id_rsa -s deploy.sh
 
-# 使用 become 模式执行脚本
-gossh script -f hosts.txt -u root -s deploy.sh --become
-gossh script -f hosts.txt -u root -s deploy.sh --become --become-user appuser
+# 从命令行参数指定主机执行脚本（逗号分隔，也需要指定 -g）
+gossh script -i "192.168.1.10,192.168.1.11" -g all -u root -s deploy.sh
+
+# 使用 become 模式（sudo）执行脚本
+gossh script -i hosts.txt -g all -u root -s deploy.sh --become
+gossh script -i hosts.txt -g all -u root -s deploy.sh --become --become-user appuser
 
 # 指定并发数
-gossh script -f hosts.txt -u root -s deploy.sh --concurrency 10
+gossh script -i hosts.txt -g all -u root -s deploy.sh -f 10
 ```
 
 ### upload 命令 - 批量上传文件
 
 ```bash
-# 从文件读取主机列表上传文件
-gossh upload -f hosts.txt -u root -k ~/.ssh/id_rsa -l app.tar.gz -r /tmp/app.tar.gz
+# 使用 -g 指定组名，只对指定分组的主机上传文件
+gossh upload -i ansible_hosts -g test -u root -l app.tar.gz -r /tmp/app.tar.gz
+gossh upload -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa -l config.conf -r /etc/config.conf
 
-# 使用 Ansible hosts 文件格式，指定分组
-gossh upload -d ansible_hosts -g test -u root -l app.tar.gz -r /tmp/app.tar.gz
-gossh upload -f hosts.ini -g web_servers -u root -l config.conf -r /etc/config.conf
+# 使用 -g all 选择所有分组的主机上传文件
+gossh upload -i hosts.txt -g all -u root -k ~/.ssh/id_rsa -l app.tar.gz -r /tmp/app.tar.gz
 
-# 从命令行参数指定主机上传文件
-gossh upload -H "192.168.1.10,192.168.1.11" -u root -l config.conf -r /etc/config.conf
+# 从目录读取所有 Ansible hosts 文件并聚合
+gossh upload -i ansible_hosts -g all -u root -k ~/.ssh/id_rsa -l app.tar.gz -r /tmp/app.tar.gz
+
+# 从命令行参数指定主机上传文件（逗号分隔，也需要指定 -g）
+gossh upload -i "192.168.1.10,192.168.1.11" -g all -u root -l app.tar.gz -r /tmp/app.tar.gz
 
 # 指定文件权限
-gossh upload -f hosts.txt -u root -l script.sh -r /tmp/script.sh --mode 0755
+gossh upload -i hosts.txt -g all -u root -l script.sh -r /tmp/script.sh --mode 0755
 
 # 指定并发数
-gossh upload -f hosts.txt -u root -l app.tar.gz -r /tmp/app.tar.gz --concurrency 10
+gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz -f 10
 ```
 
 ### ping 命令 - 测试 SSH 连接
 
 ```bash
-# 从文件读取主机列表测试连接
-gossh ping -f hosts.txt -u root -k ~/.ssh/id_rsa
+# 使用 -g 指定组名，只测试指定分组的主机
+gossh ping -i ansible_hosts -g test -u root
+gossh ping -i hosts.ini -g web_servers -u root -k ~/.ssh/id_rsa
 
-# 从命令行参数指定主机测试连接
-gossh ping -H "192.168.1.10,192.168.1.11" -u root
+# 使用 -g all 测试所有分组的主机
+gossh ping -i hosts.txt -g all -u root -k ~/.ssh/id_rsa
+
+# 从目录读取所有 Ansible hosts 文件并聚合测试
+gossh ping -i ansible_hosts -g all -u root -k ~/.ssh/id_rsa
+
+# 从命令行参数指定主机测试连接（逗号分隔，也需要指定 -g）
+gossh ping -i "192.168.1.10,192.168.1.11" -g all -u root
 
 # 指定并发数
-gossh ping -f hosts.txt -u root --concurrency 10
+gossh ping -i hosts.txt -g all -u root -f 10
+```
+
+### list-host 命令 - 列出所有主机 IP 地址
+
+```bash
+# 使用 -g 指定组名，只列出指定分组的主机
+gossh list-host -i ansible_hosts -g test
+gossh list-host -i hosts.ini -g web_servers
+
+# 使用 -g all 列出所有分组的主机
+gossh list-host -i hosts.txt -g all
+
+# 从目录列出所有主机
+gossh list-host -i ansible_hosts -g all
+
+# 从命令行参数列出主机（逗号分隔，也需要指定 -g）
+gossh list-host -i "192.168.1.10,192.168.1.11" -g all
+
+# 指定输出格式（ip/full/json）
+gossh list-host -i ansible_hosts -g test --format full
+
+# 一行输出（逗号分隔）
+gossh list-host -i ansible_hosts -g test --one-line
+```
+
+### list-group 命令 - 列出所有组名
+
+```bash
+# 从文件列出所有组
+gossh list-group -i ansible_hosts
+gossh list-group -i hosts.ini
+
+# 从目录列出所有组（递归读取所有文件）
+gossh list-group -i hosts_dir/
+
+# 从 ansible.cfg 配置的 inventory 列出所有组
+gossh list-group
+
+# 一行输出（逗号分隔）
+gossh list-group -i ansible_hosts --one-line
 ```
 
 ### 参数说明
 
-#### 主机列表相关
-- `-f, --file`: 主机列表文件路径（支持普通格式和 Ansible INI 格式）
-- `-d, --dir`: Ansible hosts 目录路径（读取目录下所有 .ini 文件并聚合）
-- `-H, --hosts`: 主机列表（逗号分隔），例如: `192.168.1.10,192.168.1.11`
-- `-g, --group`: Ansible INI 格式的分组名称（仅在使用 -f 或 -d 参数时有效），例如: `-g test` 或 `-g web_servers`
+#### 全局参数（所有命令通用）
 
-#### 认证相关
-- `-u, --user`: SSH 用户名（必需）
-- `-k, --key`: SSH 私钥路径（优先使用）
+**主机列表相关**
+
+- `-i, --inventory`: 主机列表（文件路径、目录路径或逗号分隔的主机列表）。如果指定目录，会递归读取目录下所有子文件并聚合，例如: `-i hosts.ini` 或 `-i hosts_dir/` 或 `-i 192.168.1.10,192.168.1.11`
+- `-g, --group`: Ansible INI 格式的分组名称（必需）。使用 `-g all` 表示选择所有分组，支持逗号分隔的多个组，例如: `-g test` 或 `-g web_servers` 或 `-g all` 或 `-g test,web_servers`
+
+**认证相关**
+
+- `-u, --user`: SSH 用户名（可从 ansible.cfg 的 remote_user 读取）
+- `-k, --key`: SSH 私钥路径（优先使用，可从 ansible.cfg 的 private_key_file 读取）
 - `-p, --password`: SSH 密码（如果未提供 key）
 - `-P, --port`: SSH 端口（默认: 22）
 
-#### 执行相关（run 命令）
+**执行相关**
+
+- `-f, --forks`: 并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）
+- `-T, --timeout`: 连接超时时间（默认: 30s，可从 ansible.cfg 的 timeout 读取），例如: `30s`, `1m`, `2m30s`
+- `--config-file`: 指定 ansible.cfg 配置文件路径。如果未指定，将按以下顺序查找：1) 环境变量 ANSIBLE_CONFIG 2) 当前目录及父目录的 ansible.cfg 3) ~/.ansible.cfg
+
+#### run 命令专用参数
+
 - `-c, --command`: 要执行的命令（必需）
 - `--become`: 使用 sudo 执行命令（类似 ansible 的 become）
 - `--become-user`: 使用 sudo 切换到指定用户执行命令（默认: root）
-- `--concurrency`: 并发执行数量（默认: 5）
 - `--show-output`: 显示命令输出（默认: true）
+- `--log-dir`: 日志目录路径（可选，JSON 格式）。会自动生成文件名：run-时间戳.log
 
-#### 执行相关（script 命令）
+#### script 命令专用参数
+
 - `-s, --script`: 要执行的脚本文件路径（必需）
-- `--become`: 使用 sudo 执行脚本
+- `--become`: 使用 sudo 执行脚本（类似 ansible 的 become）
 - `--become-user`: 使用 sudo 切换到指定用户执行脚本（默认: root）
-- `--concurrency`: 并发执行数量（默认: 5）
 - `--show-output`: 显示命令输出（默认: true）
+- `--log-dir`: 日志目录路径（可选，JSON 格式）。会自动生成文件名：script-时间戳.log
 
-#### 上传相关（upload 命令）
+#### upload 命令专用参数
+
 - `-l, --local`: 本地文件路径（必需）
 - `-r, --remote`: 远程文件路径（必需）
 - `--mode`: 文件权限（默认: 0644）
-- `--concurrency`: 并发执行数量（默认: 5）
 - `--show-output`: 显示命令输出（默认: true）
+- `--log-dir`: 日志目录路径（可选，JSON 格式）。会自动生成文件名：upload-时间戳.log
+
+#### list-host 命令专用参数
+
+- `--format`: 输出格式: ip（仅 IP 地址）、full（完整信息）、json（JSON 格式），默认: ip
+- `--one-line`: 一行输出（逗号分隔）
+
+#### list-group 命令专用参数
+
+- `--one-line`: 一行输出（逗号分隔）
 
 ### 主机列表文件格式
 
@@ -187,6 +263,7 @@ admin@192.168.1.13:2222   # 指定用户和端口
 ```
 
 每行一个主机，支持：
+
 - 空行和以 `#` 开头的注释行会被忽略
 - 格式：`[user@]host[:port]`
 - 如果不指定用户，使用 `-u` 参数指定的用户
@@ -210,64 +287,79 @@ root@192.168.1.12
 **注意**：目前不支持 Ansible 的 `[group:children]` 子分组格式，仅支持直接定义主机列表的分组。
 
 使用方式：
-- `-f hosts.ini -g web_servers`: 只对 web_servers 分组的主机执行
-- `-d ansible_hosts`: 读取目录下所有 .ini 文件并聚合所有主机
-- `-d ansible_hosts -g web_servers`: 从目录中读取，但只对指定分组执行
+
+- `-i hosts.ini -g web_servers`: 只对 web_servers 分组的主机执行
+- `-i ansible_hosts -g all`: 读取目录下所有文件并聚合所有主机
+- `-i ansible_hosts -g web_servers`: 从目录中读取，但只对指定分组执行
 
 ## 示例
 
 ### 示例 1: 检查所有服务器的磁盘使用情况
 
 ```bash
-gossh run -f hosts.txt -u root -k ~/.ssh/id_rsa -c "df -h"
+gossh run -i hosts.txt -g all -u root -k ~/.ssh/id_rsa -c "df -h"
 ```
 
 ### 示例 2: 批量执行部署脚本
 
 ```bash
-gossh script -f hosts.txt -u deploy -k ~/.ssh/deploy_key -s deploy.sh --concurrency 10
+gossh script -i hosts.txt -g all -u deploy -k ~/.ssh/deploy_key -s deploy.sh -f 10
 ```
 
 ### 示例 2.1: 使用 become 模式执行需要权限的命令
 
 ```bash
 # 使用 sudo 执行需要 root 权限的命令
-gossh run -f hosts.txt -u deploy -c "systemctl restart nginx" --become
+gossh run -i hosts.txt -g all -u deploy -c "systemctl restart nginx" --become
 
 # 切换到指定用户执行命令
-gossh run -f hosts.txt -u deploy -c "whoami" --become --become-user appuser
+gossh run -i hosts.txt -g all -u deploy -c "whoami" --become --become-user appuser
 ```
 
 ### 示例 2.2: 批量上传文件
 
 ```bash
 # 上传文件到远程主机
-gossh upload -f hosts.txt -u root -l app.tar.gz -r /tmp/app.tar.gz
+gossh upload -i hosts.txt -g all -u root -l app.tar.gz -r /tmp/app.tar.gz
 
 # 上传脚本文件并设置执行权限
-gossh upload -f hosts.txt -u root -l deploy.sh -r /tmp/deploy.sh --mode 0755
+gossh upload -i hosts.txt -g all -u root -l deploy.sh -r /tmp/deploy.sh --mode 0755
 ```
 
 ### 示例 3: 快速检查服务器状态
 
 ```bash
-gossh run -H "server1,server2,server3" -u admin -c "uptime && free -h"
+gossh run -i "server1,server2,server3" -g all -u admin -c "uptime && free -h"
 ```
 
 ### 示例 4: 使用密码认证
 
 ```bash
-gossh run -f hosts.txt -u root -p "your_password" -c "whoami"
+gossh run -i hosts.txt -g all -u root -p "your_password" -c "whoami"
 ```
 
 ### 示例 5: 测试 SSH 连接
 
 ```bash
 # 测试所有主机的 SSH 连接是否可用
-gossh ping -f hosts.txt -u root -k ~/.ssh/id_rsa
+gossh ping -i hosts.txt -g all -u root -k ~/.ssh/id_rsa
 
 # 快速测试几个主机的连接
-gossh ping -H "192.168.1.10,192.168.1.11,192.168.1.12" -u admin
+gossh ping -i "192.168.1.10,192.168.1.11,192.168.1.12" -g all -u admin
+```
+
+### 示例 6: 列出主机和组
+
+```bash
+# 列出所有主机 IP
+gossh list-host -i hosts.txt -g all
+
+# 列出所有组名
+gossh list-group -i hosts.txt
+
+# 一行输出
+gossh list-host -i hosts.txt -g all --one-line
+gossh list-group -i hosts.txt --one-line
 ```
 
 ## 输出格式
@@ -341,4 +433,3 @@ go install .
 ## 许可证
 
 见 LICENSE 文件
-

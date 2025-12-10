@@ -35,7 +35,9 @@ type PingRequest struct {
 // PingResponse ping 命令的响应
 type PingResponse struct {
 	Results       []*ssh.PingResult
-	TotalDuration time.Duration // 总执行时间（从开始到所有任务完成）
+	TotalDuration time.Duration  // 总执行时间（从开始到所有任务完成）
+	Group         string         // 分组名称（用户指定的）
+	Hosts         []executor.Host // 主机列表（包含分组信息）
 }
 
 // Execute 执行 ping 命令
@@ -60,7 +62,7 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 		return nil, err
 	}
 
-	// 加载主机列表
+	// 加载主机列表（已经包含分组信息）
 	hosts, err := c.loadHosts(mergedReq)
 	if err != nil {
 		return nil, err
@@ -94,6 +96,8 @@ func (c *PingController) Execute(req *PingRequest) (*PingResponse, error) {
 	return &PingResponse{
 		Results:       results,
 		TotalDuration: totalDuration,
+		Group:         mergedReq.Group,
+		Hosts:         hosts,
 	}, nil
 }
 
@@ -125,6 +129,7 @@ func (c *PingController) mergeConfig(req *PingRequest) *PingRequest {
 	}
 
 	return &PingRequest{
+		ConfigFile:  req.ConfigFile,
 		Inventory:   commonCfg.Inventory,
 		Group:       commonCfg.Group,
 		User:        commonCfg.User,
@@ -155,6 +160,7 @@ func (c *PingController) loadHosts(req *PingRequest) ([]executor.Host, error) {
 		Group:      req.Group,
 	}, true)
 }
+
 
 // executePing 并发执行 ping 测试
 func (c *PingController) executePing(hosts []executor.Host, user, keyPath, password, defaultPort string, concurrency int, timeout time.Duration, progressTracker *view.ProgressTracker) ([]*ssh.PingResult, error) {

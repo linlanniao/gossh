@@ -38,7 +38,9 @@ type RunCommandRequest struct {
 // RunCommandResponse run 命令的响应
 type RunCommandResponse struct {
 	Results       []*ssh.Result
-	TotalDuration time.Duration // 总执行时间（从开始到所有任务完成）
+	TotalDuration time.Duration  // 总执行时间（从开始到所有任务完成）
+	Group         string          // 分组名称（用户指定的）
+	Hosts         []executor.Host // 主机列表（包含分组信息）
 }
 
 // Execute 执行 run 命令
@@ -164,6 +166,7 @@ func (c *RunController) Execute(req *RunCommandRequest) (*RunCommandResponse, er
 	return &RunCommandResponse{
 		Results:       results,
 		TotalDuration: totalDuration,
+		Group:         mergedReq.Group,
 	}, nil
 }
 
@@ -181,6 +184,7 @@ func (c *RunController) mergeConfig(req *RunCommandRequest) *RunCommandRequest {
 	})
 
 	return &RunCommandRequest{
+		ConfigFile:  req.ConfigFile,
 		Inventory:   commonCfg.Inventory,
 		Group:       commonCfg.Group,
 		User:        commonCfg.User,

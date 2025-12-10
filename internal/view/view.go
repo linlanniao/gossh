@@ -28,16 +28,16 @@ func setupTableStyle(t table.Writer) {
 }
 
 // PrintRunResults 打印 run 命令的执行结果
-func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOutput bool) {
+func PrintRunResults(results []*ssh.Result, totalDuration time.Duration, showOutput bool, group string, hosts []executor.Host) {
 	stats := collectRunStatistics(results)
 
-	printRunResultsTable(results, stats)
+	printRunResultsTable(results, stats, group, hosts)
 
 	if showOutput {
 		printRunDetailedOutput(results)
 	}
 
-	printRunSummary(results, stats, totalDuration)
+	printRunSummary(results, stats, totalDuration, group)
 }
 
 // runStatistics 执行结果统计信息
@@ -69,14 +69,14 @@ func collectRunStatistics(results []*ssh.Result) *runStatistics {
 }
 
 // printRunResultsTable 打印执行结果表格
-func printRunResultsTable(results []*ssh.Result, stats *runStatistics) {
+func printRunResultsTable(results []*ssh.Result, stats *runStatistics, group string, hosts []executor.Host) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	setupTableStyle(t)
-	t.AppendHeader(table.Row{"主机", "状态", "退出码", "耗时", "错误信息"})
+	t.AppendHeader(table.Row{"主机", "分组", "状态", "退出码", "耗时", "错误信息"})
 
 	for _, result := range results {
-		row := buildResultTableRow(result)
+		row := buildResultTableRow(result, group, hosts)
 		t.AppendRow(row)
 	}
 
@@ -85,7 +85,7 @@ func printRunResultsTable(results []*ssh.Result, stats *runStatistics) {
 }
 
 // buildResultTableRow 构建结果表格行
-func buildResultTableRow(result *ssh.Result) table.Row {
+func buildResultTableRow(result *ssh.Result, group string, hosts []executor.Host) table.Row {
 	var status string
 	var exitCode string
 	var duration string
@@ -107,7 +107,18 @@ func buildResultTableRow(result *ssh.Result) table.Row {
 		duration = result.Duration.Round(time.Millisecond).String()
 	}
 
-	return table.Row{result.Host, status, exitCode, duration, errorMsg}
+	// 查找主机所属的分组
+	groups := "-"
+	for _, host := range hosts {
+		if host.Address == result.Host {
+			if len(host.Groups) > 0 {
+				groups = strings.Join(host.Groups, ",")
+			}
+			break
+		}
+	}
+
+	return table.Row{result.Host, groups, status, exitCode, duration, errorMsg}
 }
 
 // truncateError 截断过长的错误信息
@@ -165,9 +176,14 @@ func getHostColor(isSuccess bool) text.Colors {
 }
 
 // printRunSummary 打印执行结果摘要
-func printRunSummary(results []*ssh.Result, stats *runStatistics, totalDuration time.Duration) {
-	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n",
+func printRunSummary(results []*ssh.Result, stats *runStatistics, totalDuration time.Duration, group string) {
+	groupText := group
+	if groupText == "" {
+		groupText = "-"
+	}
+	fmt.Printf("\n总计: %d 台主机 | %s | %s | %s | 总耗时: %s\n",
 		len(results),
+		text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("分组: %s", groupText)),
 		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", stats.successCount)),
 		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", stats.failCount)),
 		totalDuration.Round(time.Millisecond).String())
@@ -189,7 +205,7 @@ func printRunSummary(results []*ssh.Result, stats *runStatistics, totalDuration 
 
 // PrintPingResults 打印 ping 命令的测试结果
 // 显示所有主机的连接测试结果，包括成功/失败状态、延迟和错误信息
-func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
+func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration, group string, hosts []executor.Host) {
 	successCount := 0
 	failCount := 0
 
@@ -200,8 +216,24 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 		}
 	}
 
+	// 构建主机地址到分组的映射
+	hostGroupsMap := make(map[string]string)
+	for _, host := range hosts {
+		key := fmt.Sprintf("%s:%s", host.Address, host.Port)
+		if len(host.Groups) > 0 {
+			hostGroupsMap[key] = strings.Join(host.Groups, ",")
+		} else {
+			hostGroupsMap[key] = "-"
+		}
+	}
+
 	if len(validResults) == 0 {
-		fmt.Printf("\n总计: 0 台主机 | 总耗时: %s\n\n",
+		groupText := group
+		if groupText == "" {
+			groupText = "-"
+		}
+		fmt.Printf("\n总计: 0 台主机 | %s | 总耗时: %s\n\n",
+			text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("分组: %s", groupText)),
 			totalDuration.Round(time.Millisecond).String())
 		return
 	}
@@ -209,7 +241,7 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	setupTableStyle(t)
-	t.AppendHeader(table.Row{"主机", "状态", "延迟", "错误信息"})
+	t.AppendHeader(table.Row{"主机", "分组", "状态", "延迟", "错误信息"})
 
 	for _, result := range validResults {
 		var status string
@@ -227,21 +259,33 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 				duration = result.Duration.Round(time.Millisecond).String()
 			}
 			if result.Error != nil {
-				errorMsg = result.Error.Error()
-				if len(errorMsg) > 100 {
-					errorMsg = errorMsg[:97] + "..."
-				}
+				errorMsg = truncateError(result.Error.Error(), 50)
 			}
 		}
 
-		t.AppendRow(table.Row{result.Host, status, duration, errorMsg})
+		// 查找主机所属的分组
+		groups := "-"
+		for _, host := range hosts {
+			if host.Address == result.Host {
+				if len(host.Groups) > 0 {
+					groups = strings.Join(host.Groups, ",")
+				}
+				break
+			}
+		}
+		t.AppendRow(table.Row{result.Host, groups, status, duration, errorMsg})
 	}
 
 	fmt.Println()
 	t.Render()
 
-	fmt.Printf("\n总计: %d 台主机 | %s | %s | 总耗时: %s\n\n",
+	groupText := group
+	if groupText == "" {
+		groupText = "-"
+	}
+	fmt.Printf("\n总计: %d 台主机 | %s | %s | %s | 总耗时: %s\n\n",
 		len(validResults),
+		text.Colors{text.FgCyan}.Sprint(fmt.Sprintf("分组: %s", groupText)),
 		text.Colors{text.FgGreen}.Sprint(fmt.Sprintf("成功: %d", successCount)),
 		text.Colors{text.FgRed}.Sprint(fmt.Sprintf("失败: %d", failCount)),
 		totalDuration.Round(time.Millisecond).String())
@@ -249,14 +293,23 @@ func PrintPingResults(results []*ssh.PingResult, totalDuration time.Duration) {
 
 // PrintListResults 打印 list 命令的主机列表
 // format: ip（仅IP地址）、full（完整信息）、json（JSON格式）
-func PrintListResults(hosts []executor.Host, format string) {
+// oneLine: 是否一行输出（逗号分隔）
+func PrintListResults(hosts []executor.Host, format string, oneLine bool) {
 	switch format {
 	case "json":
 		printListJSON(hosts)
 	case "full":
-		printListFull(hosts)
+		if oneLine {
+			printListFullOneLine(hosts)
+		} else {
+			printListFull(hosts)
+		}
 	default: // "ip"
-		printListIP(hosts)
+		if oneLine {
+			printListIPOneLine(hosts)
+		} else {
+			printListIP(hosts)
+		}
 	}
 }
 
@@ -264,6 +317,36 @@ func printListIP(hosts []executor.Host) {
 	for _, host := range hosts {
 		fmt.Println(host.Address)
 	}
+}
+
+func printListIPOneLine(hosts []executor.Host) {
+	if len(hosts) == 0 {
+		return
+	}
+	addresses := make([]string, len(hosts))
+	for i, host := range hosts {
+		addresses[i] = host.Address
+	}
+	fmt.Println(strings.Join(addresses, ","))
+}
+
+func printListFullOneLine(hosts []executor.Host) {
+	if len(hosts) == 0 {
+		return
+	}
+	items := make([]string, len(hosts))
+	for i, host := range hosts {
+		port := host.Port
+		if port == "" {
+			port = "22"
+		}
+		item := host.Address + ":" + port
+		if host.User != "" {
+			item = host.User + "@" + item
+		}
+		items[i] = item
+	}
+	fmt.Println(strings.Join(items, ","))
 }
 
 func printListFull(hosts []executor.Host) {
@@ -326,6 +409,25 @@ func printListJSON(hosts []executor.Host) {
 	}
 
 	fmt.Println(string(jsonData))
+}
+
+// PrintGroupResults 打印 list-group 命令的组列表
+// oneLine: 是否一行输出（逗号分隔）
+func PrintGroupResults(groups []string, oneLine bool) {
+	if len(groups) == 0 {
+		fmt.Println("未找到任何组")
+		return
+	}
+
+	if oneLine {
+		// 一行输出：逗号分隔
+		fmt.Println(strings.Join(groups, ","))
+	} else {
+		// 简单输出：每行一个组名
+		for _, group := range groups {
+			fmt.Println(group)
+		}
+	}
 }
 
 const (

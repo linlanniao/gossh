@@ -246,17 +246,54 @@ func loadHostsFromInventoryPath(filePath, group string) ([]executor.Host, error)
 }
 
 // loadHostsFromInventoryFile 从 inventory 文件加载主机列表
+// group 支持逗号分隔的多个组
 func loadHostsFromInventoryFile(filePath, group string) ([]executor.Host, error) {
 	hostsWithGroups, err := loadHostsFromFileWithGroups(filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	// 根据分组筛选
-	var hosts []executor.Host
+	// 解析组列表
+	targetGroups := parseGroups(group)
+
+	// 构建主机到分组的映射（一个主机可能属于多个分组）
+	hostGroupsMap := make(map[string][]string)
 	for _, hwg := range hostsWithGroups {
-		if group == "" || group == "all" || hwg.group == group {
-			hosts = append(hosts, hwg.host)
+		// 如果指定了分组，只处理匹配分组的主机
+		if len(targetGroups) > 0 && !isGroupMatch(hwg.group, targetGroups) {
+			continue
+		}
+
+		key := fmt.Sprintf("%s:%s", hwg.host.Address, hwg.host.Port)
+		if hwg.group != "" {
+			// 检查分组是否已存在，避免重复
+			groups := hostGroupsMap[key]
+			found := false
+			for _, g := range groups {
+				if g == hwg.group {
+					found = true
+					break
+				}
+			}
+			if !found {
+				hostGroupsMap[key] = append(groups, hwg.group)
+			}
+		}
+	}
+
+	// 根据分组筛选，并填充分组信息
+	var hosts []executor.Host
+	hostMap := make(map[string]bool) // 用于去重
+
+	for _, hwg := range hostsWithGroups {
+		if isGroupMatch(hwg.group, targetGroups) {
+			key := fmt.Sprintf("%s:%s", hwg.host.Address, hwg.host.Port)
+			if !hostMap[key] {
+				hostMap[key] = true
+				host := hwg.host
+				host.Groups = hostGroupsMap[key]
+				hosts = append(hosts, host)
+			}
 		}
 	}
 
@@ -273,4 +310,56 @@ func mergeHostsWithDedup(allHosts, newHosts []executor.Host, hostMap map[string]
 		}
 	}
 	return allHosts
+}
+
+// LoadGroupsFromInventory 从 inventory 配置加载组列表
+// 支持多个文件（逗号分隔），会聚合所有组并去重
+func LoadGroupsFromInventory(inventory string) ([]string, error) {
+	if inventory == "" {
+		return nil, fmt.Errorf("inventory 配置为空")
+	}
+
+	// 分割多个文件路径
+	files := strings.Split(inventory, ",")
+	var allGroups []string
+	groupSet := make(map[string]bool) // 用于去重
+
+	for _, filePath := range files {
+		filePath = strings.TrimSpace(filePath)
+		if filePath == "" {
+			continue
+		}
+
+		groups, err := loadGroupsFromInventoryPath(filePath)
+		if err != nil {
+			// 如果某个路径加载失败，记录错误但继续处理其他文件
+			fmt.Fprintf(os.Stderr, "警告: 从路径 %s 加载组列表失败: %v\n", filePath, err)
+			continue
+		}
+
+		// 聚合组并去重
+		for _, group := range groups {
+			if !groupSet[group] {
+				groupSet[group] = true
+				allGroups = append(allGroups, group)
+			}
+		}
+	}
+
+	return allGroups, nil
+}
+
+// loadGroupsFromInventoryPath 从单个 inventory 路径加载组列表
+// 支持文件和目录两种类型
+func loadGroupsFromInventoryPath(filePath string) ([]string, error) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("路径不存在: %w", err)
+	}
+
+	if info.IsDir() {
+		return LoadGroupsFromDirectory(filePath)
+	}
+
+	return LoadGroupsFromFile(filePath)
 }

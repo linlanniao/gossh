@@ -68,7 +68,7 @@ var uploadCmd = &cobra.Command{
 		}
 
 		// 输出结果
-		view.PrintRunResults(resp.Results, resp.TotalDuration, uploadShowOutput)
+		view.PrintRunResults(resp.Results, resp.TotalDuration, uploadShowOutput, resp.Group, resp.Hosts)
 
 		return nil
 	},

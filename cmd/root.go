@@ -41,9 +41,14 @@ var rootCmd = &cobra.Command{
   gossh run -i hosts.txt -g all -u root -k ~/.ssh/id_rsa -c "uptime"
   gossh run -i "192.168.1.10,192.168.1.11" -g all -u root -c "df -h"`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// 验证 group 参数是必选的
-		if group == "" {
-			return fmt.Errorf("必须指定分组名称 (-g)。使用 -g all 表示选择所有分组")
+		// list-group 命令不需要 group 参数，跳过验证
+		if cmd.Name() == "list-group" {
+			return nil
+		}
+		// 如果 inventory 是文件或目录路径，则需要 group 参数
+		// 如果 inventory 是IP地址（直接指定），则不需要 group 参数
+		if isInventoryFileOrDir(inventory) && group == "" {
+			return fmt.Errorf("必须指定分组名称 (-g)。使用 -g all 表示选择所有分组，支持逗号分隔的多个组，例如: -g test,web_servers")
 		}
 		return nil
 	},
@@ -64,7 +69,7 @@ func init() {
 
 	// 主机列表相关参数
 	rootCmd.PersistentFlags().StringVarP(&inventory, "inventory", "i", "", "主机列表（文件路径、目录路径或逗号分隔的主机列表）。如果指定目录，会递归读取目录下所有子文件并聚合，例如: -i hosts.ini 或 -i hosts_dir/ 或 -i 192.168.1.10,192.168.1.11")
-	rootCmd.PersistentFlags().StringVarP(&group, "group", "g", "", "Ansible INI 格式的分组名称（必需）。使用 -g all 表示选择所有分组，例如: -g test 或 -g web_servers 或 -g all")
+	rootCmd.PersistentFlags().StringVarP(&group, "group", "g", "", "Ansible INI 格式的分组名称（必需）。使用 -g all 表示选择所有分组，支持逗号分隔的多个组，例如: -g test 或 -g web_servers 或 -g all 或 -g test,web_servers")
 
 	// 认证相关参数
 	rootCmd.PersistentFlags().StringVarP(&user, "user", "u", "", "SSH 用户名（可从 ansible.cfg 的 remote_user 读取）")
@@ -75,4 +80,16 @@ func init() {
 	// 执行相关参数
 	rootCmd.PersistentFlags().IntVarP(&forks, "forks", "f", 0, "并发执行数量（默认: 5，可从 ansible.cfg 的 forks 读取）")
 	rootCmd.PersistentFlags().DurationVarP(&timeout, "timeout", "T", 0, "连接超时时间（默认: 30s，可从 ansible.cfg 的 timeout 读取），例如: 30s, 1m, 2m30s")
+}
+
+// isInventoryFileOrDir 判断 inventory 是否是文件或目录路径
+// 如果 inventory 是文件或目录路径，返回 true
+// 如果 inventory 是IP地址或逗号分隔的主机列表，返回 false
+func isInventoryFileOrDir(inventory string) bool {
+	if inventory == "" {
+		return false
+	}
+	// 检查是否是文件或目录路径
+	_, err := os.Stat(inventory)
+	return err == nil
 }

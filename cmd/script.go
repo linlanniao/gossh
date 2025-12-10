@@ -70,7 +70,7 @@ var scriptCmd = &cobra.Command{
 		}
 
 		// 输出结果
-		view.PrintRunResults(resp.Results, resp.TotalDuration, scriptShowOutput)
+		view.PrintRunResults(resp.Results, resp.TotalDuration, scriptShowOutput, resp.Group, resp.Hosts)
 
 		return nil
 	},

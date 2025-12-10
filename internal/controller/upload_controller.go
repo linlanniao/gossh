@@ -39,6 +39,8 @@ type UploadCommandRequest struct {
 type UploadCommandResponse struct {
 	Results       []*ssh.Result
 	TotalDuration time.Duration
+	Group         string          // 分组名称（用户指定的）
+	Hosts         []executor.Host // 主机列表（包含分组信息）
 }
 
 // Execute 执行 upload 命令
@@ -169,6 +171,8 @@ func (c *UploadController) Execute(req *UploadCommandRequest) (*UploadCommandRes
 	return &UploadCommandResponse{
 		Results:       results,
 		TotalDuration: totalDuration,
+		Group:         mergedReq.Group,
+		Hosts:         hosts,
 	}, nil
 }
 
@@ -186,6 +190,7 @@ func (c *UploadController) mergeConfig(req *UploadCommandRequest) *UploadCommand
 	})
 
 	return &UploadCommandRequest{
+		ConfigFile:  req.ConfigFile,
 		Inventory:   commonCfg.Inventory,
 		Group:       commonCfg.Group,
 		User:        commonCfg.User,

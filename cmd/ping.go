@@ -55,7 +55,7 @@ var pingCmd = &cobra.Command{
 		}
 
 		// 输出结果
-		view.PrintPingResults(resp.Results, resp.TotalDuration)
+		view.PrintPingResults(resp.Results, resp.TotalDuration, resp.Group, resp.Hosts)
 
 		return nil
 	},

@@ -3,7 +3,6 @@ package controller
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"gossh/internal/config"
 	"gossh/internal/executor"
@@ -132,15 +131,11 @@ func loadHostsFromConfig(cfg *CommonConfig) ([]executor.Host, error) {
 		}
 	}
 
-	// 路径不存在，可能是逗号分隔的主机列表
-	if strings.Contains(cfg.Inventory, ",") {
-		hosts, err := config.LoadHostsFromString(cfg.Inventory)
-		if err != nil {
-			return nil, fmt.Errorf("解析主机列表失败: %w", err)
-		}
-		return hosts, nil
+	// 路径不存在，可能是IP地址或逗号分隔的主机列表
+	// 尝试作为主机列表解析（支持单个IP地址和逗号分隔的多个IP地址）
+	hosts, err := config.LoadHostsFromString(cfg.Inventory)
+	if err != nil {
+		return nil, fmt.Errorf("无效的主机列表格式: %s（必须是文件路径、目录路径或IP地址/逗号分隔的主机列表）", cfg.Inventory)
 	}
-
-	// 既不是文件/目录，也不是逗号分隔的列表，返回错误
-	return nil, fmt.Errorf("无效的主机列表格式: %s（必须是文件路径、目录路径或逗号分隔的主机列表）", cfg.Inventory)
+	return hosts, nil
 }

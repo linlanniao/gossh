@@ -21,10 +21,11 @@ type Executor struct {
 // Host 主机信息
 // 包含主机的地址、端口、用户和 SSH 密钥路径
 type Host struct {
-	Address string // 主机地址（IP 或域名）
-	Port    string // SSH 端口
-	User    string // SSH 用户名
-	KeyPath string // SSH 私钥路径
+	Address string   // 主机地址（IP 或域名）
+	Port    string   // SSH 端口
+	User    string   // SSH 用户名
+	KeyPath string   // SSH 私钥路径
+	Groups  []string // 主机所属的分组列表（一个主机可能属于多个分组）
 }
 
 // NewExecutor 创建新的执行器
